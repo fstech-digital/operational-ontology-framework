@@ -1,6 +1,6 @@
-# Operational Ontology Framework — FSTech
+# Operational Ontology Framework
 
-**Pin/Spec Protocol v2.** How to run AI agents in production with auditable state, no persistent memory in the model.
+How to run AI agents in production with auditable state, no persistent memory in the model.
 
 > LLM-based agents become production-ready when they operate within an explicit control envelope, not when the model gets smarter.
 
@@ -8,11 +8,10 @@
 |---|---|
 | **Author** | Felipe Silva |
 | **Version** | 2.0 |
-| **Date** | April 2026 |
 | **License** | [CC BY 4.0](LICENSE) |
-| **Canonical** | [fstech.digital/framework](https://fstech.digital/framework/) |
+| **Full framework (13 sections)** | [fstech.digital/framework](https://fstech.digital/framework/) |
 
-🇧🇷 **Versão em português:** [fstech.digital/framework](https://fstech.digital/framework/)
+🇧🇷 [Leia em português](README.pt-BR.md)
 
 ---
 
@@ -29,326 +28,119 @@ cp .env.example .env
 python agent.py examples/customer-support
 ```
 
-The agent runs the full cycle: Boot (load Pin + Spec + Handoff), Execute (pick first open task), Write-back (mark done, record learning), and Handoff (generate structured record for the next session).
-
-### Start your own project
-
 ```bash
+# Start your own project
 mkdir my-project
 cp templates/_pin.md my-project/
 cp templates/_spec.md my-project/
-
-# Edit _pin.md with your domain rules
-# Edit _spec.md with your tasks
-
+# Edit with your domain rules and tasks
 python agent.py my-project
 ```
 
+**Options:** `--all` (run all tasks) · `--model claude-haiku-4-5-20251001` (change model) · `--dry-run` (inspect without calling LLM)
+
 ---
 
-## 1. Context and Problem
+## The Problem
 
-LLM-based agents face three structural problems when they leave the prototype and enter real production.
+LLM agents in production face three structural problems: no audit trail of decisions, state loss between sessions, and circular self-validation. The common fix (vector databases, embeddings) trades one problem for another: the agent now remembers diffusely, with no guarantee of which facts survived.
 
-**Lack of auditability.** There is no structured record of what the agent decided and why. Execution logs show the what, rarely the why. When the agent acts wrong, reconstructing the causal chain is forensics, not engineering.
+## The Solution: 4 Document Artifacts
 
-**State loss between executions.** Each call starts from zero with no context from previous ones. The common attempt is to persist via vector databases or embeddings, which transfers the problem: the agent now remembers diffusely, with no guarantee of which facts survived.
+Memory lives in the filesystem, not in the model. Four markdown files, versioned with git.
 
-**Circular validation.** The model validates itself. Ask the LLM if the answer is correct, and it confirms. Without an external control layer, validation is noise trained to sound confident.
+| Artifact | Role | Volatility |
+|----------|------|-----------|
+| **Pin** | Immutable rules, domain entities, decision routes | Rarely changes |
+| **Spec** | Task checklist, execution state, learnings | Changes every session |
+| **Handoff** | Session memory: decisions, results, continuation briefing | New file each session |
+| **Facts** | Long-term accumulated knowledge with metadata | Grows over project lifetime |
 
-The Operational Ontology Framework solves all three with a minimal document structure executed in a cycle. No additional infrastructure, no persistent memory in the model, no dependency on a specific stack.
+**Pin** = what the project *is*. **Spec** = what to *do*. **Handoff** = what *happened*. **Facts** = what was *learned*.
 
-## 2. Central Thesis
+## Execution Cycle
 
-> An AI agent is production-ready when it operates within an explicit control envelope, with auditable state between executions, and when memory lives in the document, not in the model.
+Five phases. Each explicit, each generates an artifact.
 
-The framework is model-agnostic (runs with Claude, GPT, Gemini, local models) and infrastructure-agnostic (requires no vector database, specific orchestrator, or custom pipeline). The only dependency is a filesystem and document discipline.
+```
+Boot (+ Retrieval) → Execute → Write-back → Consolidate → Handoff
+     ↑                                                        |
+     └────────────────────────────────────────────────────────┘
+```
 
-A direct corollary follows: because memory lives in the filesystem and not in the model, the agent is portable across providers without state loss. Switching models tomorrow doesn't erase what it learned yesterday.
+1. **Boot** — Load Pin + Spec + Facts + latest Handoff. Query Fact Store for relevant context.
+2. **Execute** — Work through tasks. Degrade signal: repetition, lost references, generic responses, or >50% context window consumed.
+3. **Write-back** — Verify, commit, mark done, annotate learning. One task, one commit.
+4. **Consolidate** — Promote session facts to long-term Fact Store. Prune stale facts (>90 days unverified).
+5. **Handoff** — Structured record for next session. Always new session, never compaction.
 
-## 3. Foundation: The D+L+A Triad
+## Key Properties
 
-The Operational Ontology rests on a first-principles decomposition: every real management system has three atomic components, no more.
+**Model-agnostic.** Runs with Claude, GPT, Gemini, local models. Tested across provider migrations with zero state loss.
 
-**DATA (D).** Business entities. Leads, customers, projects, contracts, invoices. Everything that exists in the real world and needs representation in the system. Extraction and structuring of knowledge scattered across legacy systems, documents, and operator memories.
+**Memory sovereignty.** Memory lives in versioned files you control. Switch providers tomorrow, state survives. Not a feature, a consequence of the architecture.
 
-**LOGIC (L).** Relationship rules. Scoring, classification, prioritization, activation conditions. Business intelligence mapped so the system can infer. These are the laws governing behavior.
+**Auditability by design.** Every decision is recorded with justification. Full traceability via `git log` and `git bisect`.
 
-**ACTION (A).** Actionable write-back. Automations, notifications, state updates, messages sent. The stage where insight transforms into real execution in the operational environment.
+**Agent writes its own memory.** Write-back doesn't depend on human discipline. The agent updates Spec, generates Handoff, commits changes. The discipline is in the prompt, not in people training.
 
-The classic structure is linear: D to L to A. Practice shows the loop is continuous: actions generate new data, feeding refined logic, producing better actions. Designing a linear system is designing a system that dies on its first cycle.
+## Positioning
 
-**Operational implication.** When designing any automation, the canonical question is not "what happens when we execute" but "what happens after the action." If the answer is nothing, the system is linear, and linear means fragile.
+Complements, doesn't compete with orchestration frameworks (LangChain, CrewAI, AutoGen). Those solve *how* the agent calls tools. This solves *how* the agent maintains auditable state between calls.
 
-**Client metaphor.** A business has nouns (customers, orders, contracts), verbs (bill, notify, query), and grammar (prioritization rules, scoring, escalation). An operating system exists when all business sentences are written and the system knows how to execute them. Data are nouns. Logic is grammar. Actions are verbs.
-
-## 4. Executable Components
-
-The framework implements D+L+A as four minimal document artifacts. Each artifact is a text file, versioned, readable by humans and models.
-
-### 4.1 Pin (Invariant) — D + L
-
-Immutable file describing what the project is. Properties that are true regardless of current state: rules, identity, limits, constraints.
-
-The Pin functions as a system invariant. Projects grow in complexity, but invariants rarely change. When there's doubt about the project, the agent consults the Pin first, because it's the most stable document with the lowest cognitive cost to process.
-
-**What goes in the Pin:**
-- Project identity and scope
-- Immutable rules (constraints, policies, limits)
-- Domain entities with unambiguous definitions
-- Decision routes with entry and exit conditions
-- Automations (crons, triggers, webhooks) formalized
-
-**What doesn't go in the Pin:**
-- Execution state — that's the Spec
-- Decision history — that's the Handoff
-- Human operator preferences — that's another document
-
-### 4.2 Spec (Behavior) — L + A
-
-Living file describing what to do. Sequential task checklist. The more tasks and dependencies, the faster the document changes, which is why the Spec is more volatile than the Pin.
-
-The Spec is the behavioral space. Each completed task is marked and generates learning. A task marked as completed is immutable — never uncheck. If the result has a defect, create a new corrective task referencing the original. Same principle as Git: commits are immutable, fixes are new commits.
-
-**Self-containment principle.** Every task in a Spec must survive the handoff. Whoever writes the task is rarely who executes it — it could be another agent, another session, another day. A task that depends on implicit context to be understood dies the moment that context dies. Therefore, each Spec entry carries enough metadata for any subsequent executor to know what to do, why it exists, where the demand came from, and the minimum implementation path.
-
-### 4.3 Handoff (Memory) — A to D
-
-Structured record that feeds the next cycle. Not an execution log (the what), but a state record (where we are, why we stopped, what needs to continue).
-
-**Handoff contains:**
-- Focus of the ended session
-- Decisions made with justification
-- Tasks executed with results
-- Tasks not executed with reason
-- Continuation: re-engagement briefing for the next cycle
-
-**The handoff is the memory.** The model needs no persistent state of its own, because session N's handoff feeds session N+1's boot. Each new cycle begins with complete context in minutes, no vector database, no embeddings, no stateful memory.
-
-A fine distinction matters: this is not "zero persistence." The filesystem persists, the ontology persists, the handoff persists. What's zero is state maintained inside the model. Memory lives in the document, not in the neural network weights.
-
-### 4.4 Facts (Accumulated Memory) — D
-
-Structured file that persists facts learned during execution. The Handoff records what happened in one session. The Fact Store records what was learned across all sessions. It is the agent's long-term memory.
-
-The distinction is temporal: Handoff is volatile (each session generates a new one), Facts is cumulative (grows over the project's lifetime). Without the Fact Store, a fact learned in session 3 disappears by session 50 unless someone manually wrote it into a Pin.
-
-**Each fact carries metadata:**
-- Source (which session, task, or event originated the fact)
-- Date recorded
-- Confidence (verified, observed, inferred)
-- Last verified (for stale fact detection)
-
-**What goes in the Fact Store:**
-- Discovered preferences of clients or stakeholders
-- Observed behaviors of integrated systems (latency, limits, edge cases)
-- Design decisions and their justifications that transcend a single session
-- Patterns confirmed by practice (what works, what fails silently)
-
-**What doesn't go in the Fact Store:**
-- Immutable domain rules — that's the Pin
-- Execution task state — that's the Spec
-- Single-session context — that's the Handoff
-
-The simplest implementation is one markdown file per domain with a central index. FSTech operates with ~30 fact files indexed by a global index, queryable by text and semantic search. No database involved.
-
-## 5. Execution Cycle
-
-The framework operates in five phases. Each phase is explicit, each phase generates an artifact.
-
-**Boot → Execute → Write-back → Consolidate → Handoff.** A cycle that closes on itself every session.
-
-### Boot (with Retrieval)
-
-Load the project's Pin, Spec, Fact Store, and latest handoff at session start. In multi-agent systems, boot also loads shared memory (global fact index).
-
-**Contextual retrieval.** Before starting execution, the agent can query the Fact Store to retrieve facts relevant to the current task. In operations with dozens or hundreds of accumulated facts, text search (keyword match) resolves most cases. For larger ontologies, semantic search (embeddings) complements by finding facts by concept, not by word. FSTech operates a hybrid search engine (keyword + semantic) over 500+ documents, automatically indexed every 10 minutes. The infrastructure is simple: a local text index and a lightweight embeddings model. No external vector database.
-
-### Execute
-
-Resolve tasks in the same session. As many as the session can handle with quality. The limit isn't the number of tasks, it's context degradation. Practical signals: the agent repeats information already stated, loses reference to earlier decisions in the session, or generates generic responses where it was previously specific. In terms of window, operating above 50% of the model's context capacity is the alert zone. FSTech uses 500K tokens as the handoff threshold on models with a 1M window.
-
-**Parallel execution (Wave).** When the Spec has three or more independent tasks, the main agent dispatches sub-agents in parallel with isolated context. The main agent preserves context for orchestration and reasoning. Dependencies are respected: task B depending on A waits for A to complete.
-
-**Isolated context for heavy tasks.** For tasks involving extensive reading (codebase analysis, research, auditing), delegate to a sub-agent even if sequential. The sub-agent operates in fresh context, without accumulating residue. This prevents quality degradation from irrelevant context accumulation.
-
-### Write-back (Atomic Commit)
-
-For each completed task:
-
-- **Verify** before marking done — confirm the task is actually complete, with rigor proportional to risk
-- **Commit** one task, one commit. Message references the task. Full traceability via git bisect
-- **Mark completed** in the Spec
-- **Annotate learning** for the next task, if applicable
-
-**Pre-done verification (Programmatic Gate).** Before marking any task as completed, the agent executes a verification proportional to the action's risk. Low-impact tasks get a coherence re-read. Medium-impact tasks require functional testing. High-impact tasks require adversarial testing, manual review, and explicit discipline against known vulnerability classes. Rigor isn't uniform because the cost of error isn't uniform.
-
-**Canonical anti-pattern.** Verification is not "I ran it and got no error." It's "I tried to break it and couldn't."
-
-### Consolidate
-
-After task write-backs and before handoff, the agent runs a consolidation sweep: which facts learned in this session deserve to persist in the Fact Store?
-
-Consolidation is the mechanism that transforms session knowledge into long-term knowledge. Without it, the Fact Store never grows and handoffs accumulate facts that should have been promoted.
-
-**Promotion criteria:**
-- The fact is reusable in future sessions (not specific to this execution)
-- The fact corrects or refines an existing fact in the Fact Store
-- The fact reveals a pattern that will recur (system behavior, client preference)
-
-**What not to promote:**
-- Temporary execution state (already in the Handoff)
-- Decisions that only make sense in this context
-- Information derivable from code or git log
-
-Consolidation is also the moment to verify existing facts: if during the session the agent discovered that a fact in the Fact Store is outdated, update or remove it. Facts with last verification older than 90 days enter a re-verification queue.
-
-FSTech operates consolidation as a periodic routine that reviews the entire fact index, removes duplicates, updates metadata, and prunes obsolete facts. The principle is parsimony: a Fact Store that only grows is a Fact Store that degrades.
-
-### Handoff
-
-End the session when:
-
-- Degradation signals appear: repetition of already-covered information, loss of reference to earlier decisions, generic responses where there was previously specificity, or consumption above 50% of the model's context window
-- There's a project or domain change
-- The agent enters territory where accumulated context has become noise, not signal
-
-**Procedure: always new session, never compaction.** Compaction is lossy compression. It loses nuance, loses causality, and pays a context cost right at the next session's opening. A new session with boot via Pin and Spec starts light, recovers complete state from what's documented in the filesystem, and preserves fact fidelity.
-
-**Why Handoff is not just another compaction.** Handoff and compaction are two distinct acts. Compaction is an automatic heuristic applied to the entire history, with no goal beyond reducing tokens. Handoff is written with explicit intent of continuity. The asymmetry isn't in the act of writing, it's in the purpose. One is reaction, the other is protocol.
-
-## 6. D+L+A Component Mapping
-
-| Layer | Where it lives | What it contains |
-|-------|---------------|-----------------|
-| Data (D) | Pin + Fact Store + context inherited from previous Handoff | Entities, rules, accumulated facts, initial state |
-| Logic (L) | Pin (routes) + Spec (tasks) + Pre-done Gate + Consolidation | Decision rules, external validation, fact promotion |
-| Action (A) | Execution + Handoff | Write-back to real system, memory for next cycle |
-
-External validation (Pre-done Gate) is what eliminates circularity. The agent doesn't validate itself on externally verifiable questions. Schema, permissions, dependency state — everything is checked by code, not by model opinion.
-
-## 7. Mandatory Write-Back
-
-> If you think you know something but don't write it down, you only think you know it.
-> — Leslie Lamport
-
-Write-back is not just recording. It's the act of thinking itself. Formulating in text reveals gaps, forcing precision that internal thought doesn't require.
-
-Every perception, insight, or decision generates write-back:
-- Document update
-- Record creation
-- State change
-- Actionable notification
-
-**Metric:** insight-to-write-back cycle under one day.
-
-**Test:** if it's hard to write, the idea isn't mature yet.
-
-Insight without real system change is computational waste.
-
-## 8. Real Case: FSTech in Production
-
-The framework is not speculation. FSTech operates its internal agent fleet on this framework for six months in production, five active channels, multiple clients.
-
-**Fleet operating under the framework:**
-- **Ares** — orchestrator agent on the operator's terminal, executes auditing, refactoring, development, strategic analysis
-- **Ontos** — central hub of the fleet, runs on a dedicated server, intermediates communication and orchestrates field agents
-- **Finn** — personal financial agent in production for three distinct clients, running in isolated containers, each client with its own Pin
-- **Chava** — personal assistant running on a client's notebook, integrated with WhatsApp, calendar, and contacts
-- **Ares WhatsApp** — same orchestrator agent on a WhatsApp channel, direct communication with leads and clients
-
-**Technical proof of portability.** Over six months of operation, the fleet migrated between models without losing accumulated state. Ares ran with Claude across different versions, Ontos operates partially on local models (Gemma), Finn mixes commercial providers by client cost. In none of these transitions was accumulated knowledge lost, because it was never in the model.
-
-**Validated external case.** A client company (VJ Turrini, business consulting) faced the classic problem: operational logic concentrated in two people, no structured record. Decisions about clients, schedule, and priorities lived in the partners' memory. The agent (Chava) was configured with its own Pin (business rules, client profiles, service policies) and operational Spec. Adoption happened without imposition: the operator started consulting the agent via WhatsApp for real tasks, verified that responses reflected the business rules, and progressively delegated. In four weeks, the agent was answering client queries, organizing schedules, and maintaining an auditable decision history. The path was consultation, trust, automation. Not the reverse.
-
-## 9. Positioning
-
-The framework doesn't compete with call orchestration frameworks (LangChain, CrewAI, AutoGen). It complements them. Those frameworks solve how the agent calls tools. The Operational Ontology Framework solves how the agent maintains auditable state between calls and executions.
-
-| Aspect | Call orchestration | FSTech Framework |
-|--------|-------------------|-----------------|
-| Category | Call orchestration | State control and execution |
+| | Orchestration frameworks | This framework |
+|---|---|---|
+| Solves | How agents call tools | How agents maintain state |
+| Memory | Vector DB / embeddings | Filesystem / git |
 | Dependency | Specific stack | Model and infra agnostic |
-| Auditability | Execution logs | Structured handoff in document |
-| Memory | Persistent (vector DB, embeddings) | Documental (filesystem) |
-| Relationship | Can run on top of any | Can run underneath any |
 
-**International comparisons:**
-- **Palantir Foundry** operates under Closed World Assumption with centralized ontology. FSTech follows the same principle (if it's not documented, it doesn't exist for the system) but replaces the proprietary stack with a versioned filesystem. Same paradigm, radically simpler infrastructure.
-- **Microsoft Fabric IQ Ontology** offers operational context for agents via a managed product. FSTech offers the same without single vendor, lock-in, or mandatory SaaS.
-- **Skan Agentic Ontology of Work** formalizes ontology as a common language between agents. FSTech goes further by formalizing the execution cycle, not just the vocabulary.
+References: [Palantir Foundry](https://www.palantir.com/platforms/foundry/) (same Closed World Assumption, simpler infra), [Microsoft Fabric IQ](https://learn.microsoft.com/en-us/fabric/iq/ontology/overview) (same concept, no vendor lock-in).
 
-### 9.1 Memory Sovereignty
+## In Production
 
-When memory lives inside the model, inside the provider, inside a proprietary harness, whoever uses the agent doesn't control their own state. Switching providers means starting from zero.
+Six months, five agents, three clients. Fleet migrated across Claude versions, Gemma (local), and mixed commercial providers. Zero state loss in any transition.
 
-The Operational Ontology Framework solves this by construction. Since memory lives in versioned filesystem artifacts (Pin, Spec, Handoff), the fleet is portable by design. An agent that ran with Claude yesterday can run with Gemini tomorrow, with GPT next week, with a local model after that, and accumulated state remains valid.
+**External case:** VJ Turrini (business consulting) adopted in four weeks. Agent handles client queries, schedules, and auditable decision history. Path: consultation → trust → automation.
 
-This isn't a feature added to attract those who fear lock-in. It's a direct consequence of the initial principle that memory lives in the document.
+## Repo Structure
 
-## 10. N5 Validation
+```
+├── agent.py                  # Reference implementation (~200 lines)
+├── templates/
+│   ├── _pin.md               # Blank Pin with guidance
+│   ├── _spec.md              # Blank Spec with guidance
+│   ├── _handoff.md           # Blank Handoff with guidance
+│   └── _facts.md             # Blank Fact Store with guidance
+├── examples/
+│   └── customer-support/     # Complete fictional project
+│       ├── _pin.md
+│       ├── _spec.md
+│       ├── _facts.md
+│       └── handoffs/
+├── requirements.txt          # anthropic>=0.40.0
+└── .env.example
+```
 
-Every framework component passes through **N5**, a proprietary analytical validation methodology developed by FSTech. N5 applies five hierarchical criteria to any solution or system before considering it production-ready. The internal hierarchy prioritizes empirical evidence over theoretical elegance.
+## Limits
 
-The Operational Ontology Framework was validated by all five N5 criteria before publication. Full details of the N5 methodology are available under partnership agreement with FSTech.
+- Not for pure chatbots (no side effects = no need for state)
+- Not for exploratory prototypes (formalizing too early crystallizes wrong hypotheses)
+- Not for stateless systems (FaaS, pure transformations)
+- Empirical metrics (boot failure rate, handoff recovery time) are [declared as pending](https://fstech.digital/framework/#11.1)
 
-## 11. Limits and When Not to Use
+## Full Framework
 
-An honest framework declares where it doesn't apply.
+The complete framework (13 sections) with D+L+A triad, component mapping, write-back protocol, memory sovereignty, N5 validation, and declared empirical gaps:
 
-- **Pure conversational agents** with no side effects on real systems. A FAQ chatbot doesn't need Pin, Spec, or Handoff.
-- **Exploratory prototypes** where the goal is discovering whether the problem exists. Formalizing too early crystallizes wrong hypotheses.
-- **Truly stateless systems** where each execution is independent. Function as a service, pure transformations, deterministic data pipelines.
-- **Teams without write-back discipline.** The framework fails silently when operators ignore registration. But the solution isn't organizational culture — it's agent design.
-
-**On write-back discipline.** The most common objection is that write-back depends on human discipline, and humans forget. The answer is that the agent is the primary operator, not the human. In the correct design, the agent itself executes write-back as part of the cycle: updates the Spec upon task completion, generates the Handoff at session end, commits the changes. The human doesn't need to remember to register because they're not the one registering. The discipline is codified in the agent's prompt, not in the team's routine. The real failure point isn't human forgetfulness — it's a misconfigured agent that didn't receive the instruction to register. This is solved in the Pin, not in people training.
-
-### 11.1 Declared Empirical Gap
-
-The evidence presented (six months of operation, five agents, VJ Turrini case) is operational evidence, not quantitative metrics. This document does not contain: boot failure rate, mean handoff recovery time, or controlled comparison against a baseline without write-back.
-
-The write-back discipline that the framework itself prescribes makes these metrics producible. The raw material exists — it just hasn't been compiled into a public report in this version.
-
-**Empirical roadmap (public commitment):**
-- Cycle metrics published in a future version (cycles/week, mean boot time, mean handoff time)
-- Controlled comparison against a baseline without write-back
-- State preservation study across transitions between three different providers
-
-Read this framework as a mechanism description and invitation to verify, not as a peer-reviewed paper with arbitrated metrics.
-
-## 12. This Document Is a Snapshot
-
-The framework described here is not a final state. It's the April 2026 snapshot of a system that continues to move, precisely through the cycle it describes. Each component (Pin, Spec, Handoff, Facts) is refined by the very write-back it governs.
-
-In triad terms, the framework is Data (document structure), Logic (execution cycle), and Action (mandatory write-back), applied recursively to itself.
-
-## 13. Next Steps
-
-This document is the public version of the framework that FSTech operates internally. The internal version includes:
-
-- Executable Pin and Spec templates by project type
-- History-based boot and handoff toolchain
-- Adjacent protocols (channel isolation, escalated notification, qualification firewall)
-- Full N5 methodology applied to each artifact
-- Specific integrations with operational tools
-
-The public version is sufficient for adoption in real projects. Organizations wanting to accelerate adoption can [contact FSTech directly](https://fstech.digital/contato).
+**→ [fstech.digital/framework](https://fstech.digital/framework/)**
 
 ---
 
 ## About FSTech
 
-FSTech is a Brazilian consultancy focused on operationalizing businesses through executable ontologies and AI agents in production. The product is the operation, not the document.
+Brazilian consultancy. Executable ontologies and AI agents in production. The product is the operation, not the document.
 
-- **Founder:** Felipe Silva
-- **Site:** [fstech.digital](https://fstech.digital)
-- **Framework (canonical):** [fstech.digital/framework](https://fstech.digital/framework/)
-- **Newsletter:** [fstech.digital/newsletter](https://fstech.digital/newsletter/)
-- **X:** [@fs_tech_](https://x.com/fs_tech_)
-
----
-
-🇧🇷 **Leia em português:** [fstech.digital/framework](https://fstech.digital/framework/)
+[Site](https://fstech.digital) · [Newsletter](https://fstech.digital/newsletter/) · [X @fs_tech_](https://x.com/fs_tech_) · [Contact](https://fstech.digital/contato)
 
 ---
 
