@@ -1,16 +1,18 @@
-# Framework de Ontologia Operacional FSTech
+# Operational Ontology Framework — FSTech
 
-**Pin/Spec Protocol v2.** Como operar agentes de IA em produção com estado auditável, sem memória persistente no modelo.
+**Pin/Spec Protocol v2.** How to run AI agents in production with auditable state, no persistent memory in the model.
 
-> Agentes baseados em LLM se tornam production-ready quando operam dentro de um envelope de controle explícito, não quando o modelo fica mais inteligente.
+> LLM-based agents become production-ready when they operate within an explicit control envelope, not when the model gets smarter.
 
 | | |
 |---|---|
-| **Autor** | Felipe Silva |
-| **Versão** | 1.0 |
-| **Data** | Abril 2026 |
-| **Licença** | [CC BY 4.0](LICENSE) |
-| **Canônico** | [fstech.digital/framework](https://fstech.digital/framework/) |
+| **Author** | Felipe Silva |
+| **Version** | 1.0 |
+| **Date** | April 2026 |
+| **License** | [CC BY 4.0](LICENSE) |
+| **Canonical** | [fstech.digital/framework](https://fstech.digital/framework/) |
+
+🇧🇷 **Versão em português:** [fstech.digital/framework](https://fstech.digital/framework/)
 
 ---
 
@@ -22,281 +24,285 @@ cd operational-ontology-framework
 
 pip install -r requirements.txt
 cp .env.example .env
-# Adicione sua ANTHROPIC_API_KEY no .env
+# Add your ANTHROPIC_API_KEY to .env
 
 python agent.py examples/customer-support
 ```
 
-O agente vai executar o ciclo completo: Boot (carrega Pin + Spec + Handoff), Executar (pega primeira tarefa aberta), Write-back (marca concluída, registra aprendizado) e Handoff (gera registro estruturado para a próxima sessão).
+The agent runs the full cycle: Boot (load Pin + Spec + Handoff), Execute (pick first open task), Write-back (mark done, record learning), and Handoff (generate structured record for the next session).
 
-### Crie seu próprio projeto
+### Start your own project
 
 ```bash
-mkdir meu-projeto
-cp templates/_pin.md meu-projeto/
-cp templates/_spec.md meu-projeto/
+mkdir my-project
+cp templates/_pin.md my-project/
+cp templates/_spec.md my-project/
 
-# Edite _pin.md com as regras do seu domínio
-# Edite _spec.md com suas tarefas
+# Edit _pin.md with your domain rules
+# Edit _spec.md with your tasks
 
-python agent.py meu-projeto
+python agent.py my-project
 ```
 
 ---
 
-## 1. Contexto e Problema
+## 1. Context and Problem
 
-Agentes baseados em LLM enfrentam três problemas estruturais quando saem do protótipo e entram em produção real.
+LLM-based agents face three structural problems when they leave the prototype and enter real production.
 
-**Falta de auditabilidade.** Não há registro estruturado do que o agente decidiu e por quê. Logs de execução mostram o quê, raramente o porquê. Quando o agente age errado, reconstruir a cadeia causal é forense, não engenharia.
+**Lack of auditability.** There is no structured record of what the agent decided and why. Execution logs show the what, rarely the why. When the agent acts wrong, reconstructing the causal chain is forensics, not engineering.
 
-**Perda de estado entre execuções.** Cada chamada começa do zero sem contexto das anteriores. A tentativa comum é persistir via bancos vetoriais ou embeddings, o que transfere o problema: o agente agora lembra de forma difusa, sem garantia de quais fatos sobreviveram.
+**State loss between executions.** Each call starts from zero with no context from previous ones. The common attempt is to persist via vector databases or embeddings, which transfers the problem: the agent now remembers diffusely, with no guarantee of which facts survived.
 
-**Validação circular.** O modelo valida a si mesmo. Pergunta ao LLM se a resposta está correta, e ele confirma. Sem camada externa de controle, a validação é ruído treinado para soar confiante.
+**Circular validation.** The model validates itself. Ask the LLM if the answer is correct, and it confirms. Without an external control layer, validation is noise trained to sound confident.
 
-O Framework de Ontologia Operacional FSTech resolve os três com uma estrutura documental mínima executada em ciclo. Sem infraestrutura adicional, sem memória persistente no modelo, sem dependência de stack específica.
+The Operational Ontology Framework solves all three with a minimal document structure executed in a cycle. No additional infrastructure, no persistent memory in the model, no dependency on a specific stack.
 
-## 2. Tese Central
+## 2. Central Thesis
 
-> Um agente de IA é production-ready quando opera dentro de um envelope de controle explícito, com estado auditável entre execuções, e quando a memória vive no documento, não no modelo.
+> An AI agent is production-ready when it operates within an explicit control envelope, with auditable state between executions, and when memory lives in the document, not in the model.
 
-O framework é agnóstico de modelo (roda com Claude, GPT, Gemini, modelos locais) e de infraestrutura (não requer banco vetorial, orquestrador específico ou pipeline customizado). A única dependência é um filesystem e disciplina documental.
+The framework is model-agnostic (runs with Claude, GPT, Gemini, local models) and infrastructure-agnostic (requires no vector database, specific orchestrator, or custom pipeline). The only dependency is a filesystem and document discipline.
 
-Um corolário direto segue dessa premissa: porque a memória vive no filesystem e não no modelo, o agente é portável entre provedores sem perda de estado. Trocar de modelo amanhã não apaga o que ele aprendeu ontem.
+A direct corollary follows: because memory lives in the filesystem and not in the model, the agent is portable across providers without state loss. Switching models tomorrow doesn't erase what it learned yesterday.
 
-## 3. Fundação: A Tríade D+L+A
+## 3. Foundation: The D+L+A Triad
 
-A Ontologia Operacional se sustenta numa decomposição de primeiros princípios: todo sistema de gestão real tem três componentes atômicos, não mais.
+The Operational Ontology rests on a first-principles decomposition: every real management system has three atomic components, no more.
 
-**DADOS (D).** As entidades do negócio. Leads, clientes, projetos, contratos, faturas. Tudo que existe no mundo real e precisa ser representado no sistema. Extração e estruturação do conhecimento disperso em sistemas legados, documentos e memórias dos operadores.
+**DATA (D).** Business entities. Leads, customers, projects, contracts, invoices. Everything that exists in the real world and needs representation in the system. Extraction and structuring of knowledge scattered across legacy systems, documents, and operator memories.
 
-**LÓGICA (L).** As regras de relação. Scoring, classificação, priorização, condições de ativação. A inteligência do negócio mapeada de forma que o sistema possa inferir. São as leis que governam o comportamento.
+**LOGIC (L).** Relationship rules. Scoring, classification, prioritization, activation conditions. Business intelligence mapped so the system can infer. These are the laws governing behavior.
 
-**AÇÃO (A).** O write-back acionável. Automações, notificações, atualizações de estado, mensagens enviadas. O estágio onde o insight se transforma em execução real no ambiente operacional.
+**ACTION (A).** Actionable write-back. Automations, notifications, state updates, messages sent. The stage where insight transforms into real execution in the operational environment.
 
-A estrutura clássica é linear: D para L para A. A observação da prática mostra que o loop é contínuo: ações geram dados novos, que alimentam lógica refinada, que produz ações melhores. Projetar um sistema linear é projetar um sistema que morre no primeiro ciclo.
+The classic structure is linear: D to L to A. Practice shows the loop is continuous: actions generate new data, feeding refined logic, producing better actions. Designing a linear system is designing a system that dies on its first cycle.
 
-**Implicação operacional.** Ao projetar qualquer automação, a pergunta canônica não é "o que acontece quando executarmos" mas "o que acontece depois da ação". Se a resposta é nada, o sistema é linear, e linear significa frágil.
+**Operational implication.** When designing any automation, the canonical question is not "what happens when we execute" but "what happens after the action." If the answer is nothing, the system is linear, and linear means fragile.
 
-**Metáfora para clientes.** O negócio tem substantivos (clientes, pedidos, contratos), verbos (cobrar, notificar, consultar) e gramática (regras de priorização, scoring, escalação). Um sistema operacional existe quando todas as frases do negócio estão escritas e o sistema sabe executá-las. Dados são substantivos. Lógica é gramática. Ação são verbos.
+**Client metaphor.** A business has nouns (customers, orders, contracts), verbs (bill, notify, query), and grammar (prioritization rules, scoring, escalation). An operating system exists when all business sentences are written and the system knows how to execute them. Data are nouns. Logic is grammar. Actions are verbs.
 
-## 4. Componentes Executáveis
+## 4. Executable Components
 
-O framework implementa D+L+A como três artefatos documentais mínimos. Cada artefato é um arquivo de texto, versionado, legível por humano e por modelo.
+The framework implements D+L+A as three minimal document artifacts. Each artifact is a text file, versioned, readable by humans and models.
 
-### 4.1 Pin (Invariante) — D + L
+### 4.1 Pin (Invariant) — D + L
 
-Arquivo imutável que descreve o que o projeto é. Propriedades verdadeiras independente do estado atual: regras, identidade, limites, restrições.
+Immutable file describing what the project is. Properties that are true regardless of current state: rules, identity, limits, constraints.
 
-O Pin funciona como invariante de sistema. Projetos crescem em complexidade, mas invariantes mudam raramente. Quando há dúvida sobre o projeto, o agente consulta o Pin primeiro, porque é o documento mais estável e de menor custo cognitivo para processar.
+The Pin functions as a system invariant. Projects grow in complexity, but invariants rarely change. When there's doubt about the project, the agent consults the Pin first, because it's the most stable document with the lowest cognitive cost to process.
 
-**O que vai no Pin:**
-- Identidade e escopo do projeto
-- Regras imutáveis (restrições, políticas, limites)
-- Entidades do domínio com definições não ambíguas
-- Rotas de decisão com condições de entrada e saída
-- Automações (crons, triggers, webhooks) formalizadas
+**What goes in the Pin:**
+- Project identity and scope
+- Immutable rules (constraints, policies, limits)
+- Domain entities with unambiguous definitions
+- Decision routes with entry and exit conditions
+- Automations (crons, triggers, webhooks) formalized
 
-**O que não vai no Pin:**
-- Estado de execução, isso é Spec
-- Histórico de decisões, isso é Handoff
-- Preferências do operador humano, isso é outro documento
+**What doesn't go in the Pin:**
+- Execution state — that's the Spec
+- Decision history — that's the Handoff
+- Human operator preferences — that's another document
 
-### 4.2 Spec (Comportamento) — L + A
+### 4.2 Spec (Behavior) — L + A
 
-Arquivo vivo que descreve o que fazer. Checklist sequencial de tarefas. Quanto mais tarefas e dependências, mais rápido o documento muda, por isso a Spec é mais volátil que o Pin.
+Living file describing what to do. Sequential task checklist. The more tasks and dependencies, the faster the document changes, which is why the Spec is more volatile than the Pin.
 
-A Spec é o espaço comportamental. Cada tarefa concluída é marcada e gera aprendizado. Tarefa marcada como concluída é imutável, nunca desmarca. Se o resultado tem defeito, cria nova tarefa corretiva referenciando a original. Mesmo princípio do Git: commits são imutáveis, correções são novos commits.
+The Spec is the behavioral space. Each completed task is marked and generates learning. A task marked as completed is immutable — never uncheck. If the result has a defect, create a new corrective task referencing the original. Same principle as Git: commits are immutable, fixes are new commits.
 
-**Princípio da auto-contenção.** Toda tarefa numa Spec precisa sobreviver ao handoff. Quem escreve a tarefa raramente é quem a executa, pode ser outro agente, outra sessão, outro dia. Uma tarefa que depende de contexto implícito para ser entendida morre no momento em que o contexto morre. Por isso, cada entrada da Spec carrega uma camada de metadados suficiente para que qualquer executor posterior saiba o que fazer, por que aquilo existe, de onde veio a demanda e qual o caminho mínimo de implementação.
+**Self-containment principle.** Every task in a Spec must survive the handoff. Whoever writes the task is rarely who executes it — it could be another agent, another session, another day. A task that depends on implicit context to be understood dies the moment that context dies. Therefore, each Spec entry carries enough metadata for any subsequent executor to know what to do, why it exists, where the demand came from, and the minimum implementation path.
 
-### 4.3 Handoff (Memória) — A para D
+### 4.3 Handoff (Memory) — A to D
 
-Registro estruturado que alimenta o próximo ciclo. Não é log de execução (o quê), é registro de estado (onde estamos, por que paramos, o que precisa continuar).
+Structured record that feeds the next cycle. Not an execution log (the what), but a state record (where we are, why we stopped, what needs to continue).
 
-**Handoff contém:**
-- Foco da sessão encerrada
-- Decisões tomadas com justificativa
-- Tarefas executadas com resultado
-- Tarefas não executadas com razão
-- Continuação: briefing de reengajamento para o próximo ciclo
+**Handoff contains:**
+- Focus of the ended session
+- Decisions made with justification
+- Tasks executed with results
+- Tasks not executed with reason
+- Continuation: re-engagement briefing for the next cycle
 
-**O handoff é a memória.** O modelo não precisa de persistência de estado próprio, porque o handoff da sessão N alimenta o boot da sessão N+1. Cada novo ciclo começa com contexto completo em minutos, sem banco vetorial, sem embeddings, sem memória stateful.
+**The handoff is the memory.** The model needs no persistent state of its own, because session N's handoff feeds session N+1's boot. Each new cycle begins with complete context in minutes, no vector database, no embeddings, no stateful memory.
 
-Uma distinção fina importa: isto não é "zero persistência". O filesystem persiste, a ontologia persiste, o handoff persiste. O que é zero é estado mantido dentro do modelo. A memória vive no documento, não no peso da rede neural.
+A fine distinction matters: this is not "zero persistence." The filesystem persists, the ontology persists, the handoff persists. What's zero is state maintained inside the model. Memory lives in the document, not in the neural network weights.
 
-## 5. Ciclo de Execução
+## 5. Execution Cycle
 
-O framework opera em quatro fases. Cada fase é explícita, cada fase gera artefato.
+The framework operates in four phases. Each phase is explicit, each phase generates an artifact.
 
-**Boot → Executar → Write-back → Handoff.** Um ciclo que fecha sobre si mesmo a cada sessão.
+**Boot → Execute → Write-back → Handoff.** A cycle that closes on itself every session.
 
 ### Boot
 
-Carregar Pin e Spec do projeto no início da sessão. Em sistemas com múltiplos agentes, o boot também carrega memória compartilhada (índice global) e a última entrada do handoff.
+Load the project's Pin and Spec at session start. In multi-agent systems, boot also loads shared memory (global index) and the latest handoff entry.
 
-### Executar
+### Execute
 
-Resolver tarefas na mesma sessão. Quantas a sessão comportar com qualidade. O limite não é número de tarefas, é degradação de contexto. Sinais práticos: o agente repete informação que já foi dita, perde referência a decisões anteriores da sessão, ou gera respostas genéricas onde antes era específico. Em termos de janela, operar acima de 50% da capacidade de contexto do modelo é zona de alerta. A FSTech usa 500K tokens como threshold de handoff em modelos com janela de 1M.
+Resolve tasks in the same session. As many as the session can handle with quality. The limit isn't the number of tasks, it's context degradation. Practical signals: the agent repeats information already stated, loses reference to earlier decisions in the session, or generates generic responses where it was previously specific. In terms of window, operating above 50% of the model's context capacity is the alert zone. FSTech uses 500K tokens as the handoff threshold on models with a 1M window.
 
-**Execução paralela (Wave).** Quando a Spec tem três ou mais tarefas independentes, o agente principal dispara sub-agentes em paralelo com contexto isolado. O principal preserva contexto para orquestração e raciocínio. Dependências são respeitadas: tarefa B que depende de A espera A concluir.
+**Parallel execution (Wave).** When the Spec has three or more independent tasks, the main agent dispatches sub-agents in parallel with isolated context. The main agent preserves context for orchestration and reasoning. Dependencies are respected: task B depending on A waits for A to complete.
 
-**Contexto isolado por tarefa pesada.** Para tarefas que envolvem leitura extensiva (análise de codebase, pesquisa, auditoria), delegar a sub-agente mesmo que sejam sequenciais. O sub-agente opera em contexto fresco, sem acumular resíduo. Isso evita degradação de qualidade por acúmulo de contexto irrelevante.
+**Isolated context for heavy tasks.** For tasks involving extensive reading (codebase analysis, research, auditing), delegate to a sub-agent even if sequential. The sub-agent operates in fresh context, without accumulating residue. This prevents quality degradation from irrelevant context accumulation.
 
-### Write-back (Commit Atômico)
+### Write-back (Atomic Commit)
 
-A cada tarefa concluída:
+For each completed task:
 
-- **Verificar** antes de marcar concluída, confirmar que a tarefa está realmente feita, com rigor proporcional ao risco
-- **Commitar** uma tarefa, um commit. Mensagem referencia a tarefa. Rastreabilidade total via git bisect
-- **Marcar concluída** na Spec
-- **Anotar aprendizado** para a próxima tarefa, se houver
+- **Verify** before marking done — confirm the task is actually complete, with rigor proportional to risk
+- **Commit** one task, one commit. Message references the task. Full traceability via git bisect
+- **Mark completed** in the Spec
+- **Annotate learning** for the next task, if applicable
 
-**Verificação pré-done (Gate programático).** Antes de marcar qualquer tarefa como concluída, o agente executa uma verificação proporcional ao risco da ação. Tarefas de baixo impacto passam por releitura de coerência. Tarefas de impacto médio exigem teste funcional. Tarefas de alto impacto exigem teste adversarial, revisão manual, e disciplina explícita contra vulnerabilidades conhecidas. O rigor não é uniforme porque o custo do erro não é uniforme.
+**Pre-done verification (Programmatic Gate).** Before marking any task as completed, the agent executes a verification proportional to the action's risk. Low-impact tasks get a coherence re-read. Medium-impact tasks require functional testing. High-impact tasks require adversarial testing, manual review, and explicit discipline against known vulnerability classes. Rigor isn't uniform because the cost of error isn't uniform.
 
-**Anti-pattern canônico.** Verificação não é "rodei e não deu erro". É "tentei quebrar e não consegui".
+**Canonical anti-pattern.** Verification is not "I ran it and got no error." It's "I tried to break it and couldn't."
 
 ### Handoff
 
-Encerrar a sessão quando:
+End the session when:
 
-- Sinais de degradação aparecem: repetição de informação já coberta, perda de referência a decisões anteriores, respostas genéricas onde antes havia especificidade, ou consumo acima de 50% da janela de contexto do modelo
-- Há mudança de projeto ou domínio
-- O agente entra em território onde o contexto acumulado virou ruído, não sinal
+- Degradation signals appear: repetition of already-covered information, loss of reference to earlier decisions, generic responses where there was previously specificity, or consumption above 50% of the model's context window
+- There's a project or domain change
+- The agent enters territory where accumulated context has become noise, not signal
 
-**Procedimento: sempre nova sessão, nunca compactação.** Compactação é compressão lossy. Ela perde nuance, perde causalidade e paga um custo de contexto logo na abertura da sessão seguinte. Uma sessão nova com boot via Pin e Spec começa leve, recupera o estado completo a partir do que está documentado no filesystem e preserva a fidelidade dos fatos.
+**Procedure: always new session, never compaction.** Compaction is lossy compression. It loses nuance, loses causality, and pays a context cost right at the next session's opening. A new session with boot via Pin and Spec starts light, recovers complete state from what's documented in the filesystem, and preserves fact fidelity.
 
-**Por que Handoff não é apenas outra compactação.** Handoff e compactação são dois atos distintos. Compactação é heurística automática aplicada ao histórico inteiro, sem objetivo além de reduzir tokens. Handoff é escrito com intenção explícita de continuidade. A assimetria não está no ato de escrever, está no propósito. Um é reação, o outro é protocolo.
+**Why Handoff is not just another compaction.** Handoff and compaction are two distinct acts. Compaction is an automatic heuristic applied to the entire history, with no goal beyond reducing tokens. Handoff is written with explicit intent of continuity. The asymmetry isn't in the act of writing, it's in the purpose. One is reaction, the other is protocol.
 
-## 6. Mapeamento D+L+A nos Componentes
+## 6. D+L+A Component Mapping
 
-| Camada | Onde vive | O que contém |
-|--------|----------|-------------|
-| Dados (D) | Pin + contexto herdado do Handoff anterior | Entidades, regras, estado inicial |
-| Lógica (L) | Pin (rotas) + Spec (tarefas) + Gate pré-done | Regras de decisão e validação externa |
-| Ação (A) | Execução + Handoff | Write-back no sistema real, memória para o próximo ciclo |
+| Layer | Where it lives | What it contains |
+|-------|---------------|-----------------|
+| Data (D) | Pin + context inherited from previous Handoff | Entities, rules, initial state |
+| Logic (L) | Pin (routes) + Spec (tasks) + Pre-done Gate | Decision rules and external validation |
+| Action (A) | Execution + Handoff | Write-back to real system, memory for next cycle |
 
-A validação externa (Gate pré-done) é o que elimina a circularidade. O agente não valida a si mesmo nas questões verificáveis externamente. Schema, permissões, estado de dependências, tudo é checado por código, não por opinião do modelo.
+External validation (Pre-done Gate) is what eliminates circularity. The agent doesn't validate itself on externally verifiable questions. Schema, permissions, dependency state — everything is checked by code, not by model opinion.
 
-## 7. Write-Back Obrigatório
+## 7. Mandatory Write-Back
 
 > If you think you know something but don't write it down, you only think you know it.
 > — Leslie Lamport
 
-Write-back não é apenas registro. É o próprio ato de pensar. Formular em texto revela lacunas, forçando precisão que o pensamento interno não exige.
+Write-back is not just recording. It's the act of thinking itself. Formulating in text reveals gaps, forcing precision that internal thought doesn't require.
 
-Toda percepção, insight ou decisão gera write-back:
-- Atualização de documento
-- Criação de registro
-- Alteração de estado
-- Notificação acionável
+Every perception, insight, or decision generates write-back:
+- Document update
+- Record creation
+- State change
+- Actionable notification
 
-**Métrica:** ciclo insight para write-back menor que um dia.
+**Metric:** insight-to-write-back cycle under one day.
 
-**Teste:** se é difícil de escrever, a ideia ainda não está madura.
+**Test:** if it's hard to write, the idea isn't mature yet.
 
-Insight sem alteração do sistema real é lixo computacional.
+Insight without real system change is computational waste.
 
-## 8. Case Real: FSTech em Produção
+## 8. Real Case: FSTech in Production
 
-O framework não é especulação. A FSTech opera sua frota interna de agentes neste framework há seis meses em produção, cinco canais ativos, múltiplos clientes.
+The framework is not speculation. FSTech operates its internal agent fleet on this framework for six months in production, five active channels, multiple clients.
 
-**Frota operando sob o framework:**
-- **Ares** agente orquestrador no terminal do operador, executa auditoria, refatoração, desenvolvimento, análise estratégica
-- **Ontos** hub central da frota, roda em servidor dedicado, intermedia comunicação e orquestra agentes de campo
-- **Finn** agente financeiro pessoal em produção para três clientes distintos, rodando em containers isolados, cada cliente com seu Pin
-- **Chava** assistente pessoal rodando no notebook de uma cliente, integração com WhatsApp, calendário e contatos
-- **Ares WhatsApp** mesmo agente orquestrador em canal de WhatsApp, comunicação direta com leads e clientes
+**Fleet operating under the framework:**
+- **Ares** — orchestrator agent on the operator's terminal, executes auditing, refactoring, development, strategic analysis
+- **Ontos** — central hub of the fleet, runs on a dedicated server, intermediates communication and orchestrates field agents
+- **Finn** — personal financial agent in production for three distinct clients, running in isolated containers, each client with its own Pin
+- **Chava** — personal assistant running on a client's notebook, integrated with WhatsApp, calendar, and contacts
+- **Ares WhatsApp** — same orchestrator agent on a WhatsApp channel, direct communication with leads and clients
 
-**Prova técnica de portabilidade.** Ao longo dos seis meses de operação, a frota migrou entre modelos sem perder estado acumulado. Ares rodou com Claude em diferentes versões, Ontos opera parcialmente sobre modelos locais (Gemma), Finn mescla provedores comerciais conforme o custo por cliente. Em nenhuma dessas transições o conhecimento acumulado foi perdido, porque o conhecimento nunca esteve no modelo.
+**Technical proof of portability.** Over six months of operation, the fleet migrated between models without losing accumulated state. Ares ran with Claude across different versions, Ontos operates partially on local models (Gemma), Finn mixes commercial providers by client cost. In none of these transitions was accumulated knowledge lost, because it was never in the model.
 
-**Case externo validado.** Uma empresa cliente (VJ Turrini, consultoria empresarial) enfrentava o problema clássico: lógica operacional concentrada em duas pessoas, sem registro estruturado. Decisões sobre clientes, agenda e prioridades viviam na memória dos sócios. O agente (Chava) foi configurado com Pin próprio (regras do negócio, perfil de clientes, políticas de atendimento) e Spec operacional. A adoção aconteceu sem imposição: a operadora começou a consultar o agente via WhatsApp para tarefas reais, verificou que as respostas refletiam as regras do negócio, e passou a delegar progressivamente. Em quatro semanas, o agente respondia consultas de clientes, organizava agenda e mantinha histórico auditável de decisões. O caminho foi consulta, confiança, automação. Não o inverso.
+**Validated external case.** A client company (VJ Turrini, business consulting) faced the classic problem: operational logic concentrated in two people, no structured record. Decisions about clients, schedule, and priorities lived in the partners' memory. The agent (Chava) was configured with its own Pin (business rules, client profiles, service policies) and operational Spec. Adoption happened without imposition: the operator started consulting the agent via WhatsApp for real tasks, verified that responses reflected the business rules, and progressively delegated. In four weeks, the agent was answering client queries, organizing schedules, and maintaining an auditable decision history. The path was consultation, trust, automation. Not the reverse.
 
-## 9. Posicionamento
+## 9. Positioning
 
-O framework não compete com frameworks de orquestração de chamadas (LangChain, CrewAI, AutoGen). Complementa. Esses frameworks resolvem como o agente chama ferramentas. O Framework de Ontologia Operacional FSTech resolve como o agente mantém estado auditável entre chamadas e execuções.
+The framework doesn't compete with call orchestration frameworks (LangChain, CrewAI, AutoGen). It complements them. Those frameworks solve how the agent calls tools. The Operational Ontology Framework solves how the agent maintains auditable state between calls and executions.
 
-| Aspecto | Orquestração de chamadas | Framework FSTech |
-|---------|------------------------|-----------------|
-| Categoria | Orquestração de chamadas | Controle de estado e execução |
-| Dependência | Stack específica | Agnóstico de modelo e de infra |
-| Auditabilidade | Logs de execução | Handoff estruturado em documento |
-| Memória | Persistente (banco vetorial, embeddings) | Documental (filesystem) |
-| Relação | Pode rodar sobre qualquer um | Pode rodar sob qualquer um |
+| Aspect | Call orchestration | FSTech Framework |
+|--------|-------------------|-----------------|
+| Category | Call orchestration | State control and execution |
+| Dependency | Specific stack | Model and infra agnostic |
+| Auditability | Execution logs | Structured handoff in document |
+| Memory | Persistent (vector DB, embeddings) | Documental (filesystem) |
+| Relationship | Can run on top of any | Can run underneath any |
 
-**Comparativo com referências internacionais:**
-- **Palantir Foundry** opera sob Closed World Assumption com ontologia centralizada. O Framework FSTech segue o mesmo princípio (se não está documentado, não existe para o sistema) mas substitui o stack proprietário por filesystem versionado. Mesmo paradigma, infraestrutura radicalmente mais simples.
-- **Microsoft Fabric IQ Ontology** oferece contexto operacional para agentes via produto gerenciado. O Framework FSTech oferece o mesmo sem fornecedor único, sem lock-in, sem SaaS obrigatório.
-- **Skan Agentic Ontology of Work** formaliza ontologia como linguagem comum entre agentes. O Framework FSTech vai além ao formalizar o ciclo de execução, não apenas o vocabulário.
+**International comparisons:**
+- **Palantir Foundry** operates under Closed World Assumption with centralized ontology. FSTech follows the same principle (if it's not documented, it doesn't exist for the system) but replaces the proprietary stack with a versioned filesystem. Same paradigm, radically simpler infrastructure.
+- **Microsoft Fabric IQ Ontology** offers operational context for agents via a managed product. FSTech offers the same without single vendor, lock-in, or mandatory SaaS.
+- **Skan Agentic Ontology of Work** formalizes ontology as a common language between agents. FSTech goes further by formalizing the execution cycle, not just the vocabulary.
 
-### 9.1 Soberania de Memória
+### 9.1 Memory Sovereignty
 
-Quando a memória vive dentro do modelo, dentro do provider, dentro de um harness proprietário, quem usa o agente não controla seu próprio estado. Trocar de provider significa começar do zero.
+When memory lives inside the model, inside the provider, inside a proprietary harness, whoever uses the agent doesn't control their own state. Switching providers means starting from zero.
 
-O Framework de Ontologia Operacional FSTech resolve esse problema por construção. Como a memória vive em artefatos de filesystem versionados (Pin, Spec, Handoff), a frota é portável por desenho. Um agente que rodou com Claude ontem pode rodar com Gemini amanhã, com GPT na semana seguinte, com um modelo local depois, e o estado acumulado continua válido.
+The Operational Ontology Framework solves this by construction. Since memory lives in versioned filesystem artifacts (Pin, Spec, Handoff), the fleet is portable by design. An agent that ran with Claude yesterday can run with Gemini tomorrow, with GPT next week, with a local model after that, and accumulated state remains valid.
 
-Isso não é uma feature adicionada para atrair quem teme lock-in. É consequência direta do princípio inicial de que a memória vive no documento.
+This isn't a feature added to attract those who fear lock-in. It's a direct consequence of the initial principle that memory lives in the document.
 
-## 10. Validação N5
+## 10. N5 Validation
 
-Todo componente do framework passa pelo **N5**, metodologia proprietária de validação analítica desenvolvida pela FSTech. O N5 aplica cinco critérios hierárquicos sobre qualquer solução ou sistema antes de considerá-lo production-ready. A hierarquia interna prioriza evidência empírica sobre elegância teórica.
+Every framework component passes through **N5**, a proprietary analytical validation methodology developed by FSTech. N5 applies five hierarchical criteria to any solution or system before considering it production-ready. The internal hierarchy prioritizes empirical evidence over theoretical elegance.
 
-O Framework de Ontologia Operacional FSTech foi validado pelos cinco critérios do N5 antes de ser publicado. Detalhes completos da metodologia N5 estão disponíveis sob acordo de parceria com a FSTech.
+The Operational Ontology Framework was validated by all five N5 criteria before publication. Full details of the N5 methodology are available under partnership agreement with FSTech.
 
-## 11. Limites e Quando Não Usar
+## 11. Limits and When Not to Use
 
-Um framework honesto declara onde não se aplica.
+An honest framework declares where it doesn't apply.
 
-- **Agentes conversacionais puros** sem efeito colateral em sistemas reais. Um chatbot de FAQ não precisa de Pin, Spec ou Handoff.
-- **Protótipos exploratórios** onde o objetivo é descobrir se o problema existe. Formalizar cedo demais cristaliza hipóteses erradas.
-- **Sistemas stateless verdadeiros** onde cada execução é independente. Function as a service, transformações puras, pipelines determinísticos.
-- **Equipes sem disciplina de write-back.** O framework falha silenciosamente quando operadores ignoram o registro. Mas a solução não é cultura organizacional, é design de agente.
+- **Pure conversational agents** with no side effects on real systems. A FAQ chatbot doesn't need Pin, Spec, or Handoff.
+- **Exploratory prototypes** where the goal is discovering whether the problem exists. Formalizing too early crystallizes wrong hypotheses.
+- **Truly stateless systems** where each execution is independent. Function as a service, pure transformations, deterministic data pipelines.
+- **Teams without write-back discipline.** The framework fails silently when operators ignore registration. But the solution isn't organizational culture — it's agent design.
 
-**Sobre a disciplina de write-back.** A objeção mais comum é que write-back depende de disciplina humana, e humanos esquecem. A resposta é que o agente é o operador principal, não o humano. No design correto, o próprio agente executa o write-back como parte do ciclo: atualiza a Spec ao concluir tarefa, gera o Handoff ao encerrar sessão, commita as mudanças. O humano não precisa lembrar de registrar porque não é ele quem registra. A disciplina está codificada no prompt do agente, não na rotina da equipe. O ponto de falha real não é esquecimento humano, é um agente mal configurado que não recebeu a instrução de registrar. Isso é resolvido no Pin, não em treinamento de pessoas.
+**On write-back discipline.** The most common objection is that write-back depends on human discipline, and humans forget. The answer is that the agent is the primary operator, not the human. In the correct design, the agent itself executes write-back as part of the cycle: updates the Spec upon task completion, generates the Handoff at session end, commits the changes. The human doesn't need to remember to register because they're not the one registering. The discipline is codified in the agent's prompt, not in the team's routine. The real failure point isn't human forgetfulness — it's a misconfigured agent that didn't receive the instruction to register. This is solved in the Pin, not in people training.
 
-### 11.1 Lacuna Empírica Declarada
+### 11.1 Declared Empirical Gap
 
-A prova apresentada (seis meses de operação, cinco agentes, caso VJ Turrini) é evidência operacional, não métrica quantitativa. Não há neste documento: taxa de falha de boot, tempo médio de recuperação por handoff, comparação controlada contra baseline sem write-back.
+The evidence presented (six months of operation, five agents, VJ Turrini case) is operational evidence, not quantitative metrics. This document does not contain: boot failure rate, mean handoff recovery time, or controlled comparison against a baseline without write-back.
 
-A disciplina de write-back que o próprio framework prescreve torna essas métricas produzíveis. O material bruto existe, apenas não foi compilado em relatório público até esta versão.
+The write-back discipline that the framework itself prescribes makes these metrics producible. The raw material exists — it just hasn't been compiled into a public report in this version.
 
-**Roadmap empírico (compromisso público):**
-- Métricas de ciclo publicadas em versão futura (ciclos/semana, tempo médio de boot, tempo médio de handoff)
-- Comparação controlada contra baseline sem write-back
-- Estudo de preservação de estado em transição entre três provedores diferentes
+**Empirical roadmap (public commitment):**
+- Cycle metrics published in a future version (cycles/week, mean boot time, mean handoff time)
+- Controlled comparison against a baseline without write-back
+- State preservation study across transitions between three different providers
 
-Leia este framework como descrição de mecanismo e convite à verificação, não como artigo científico com métricas arbitradas.
+Read this framework as a mechanism description and invitation to verify, not as a peer-reviewed paper with arbitrated metrics.
 
-## 12. Este Documento é um Snapshot
+## 12. This Document Is a Snapshot
 
-O framework aqui descrito não é um estado final. É o recorte de abril de 2026 de um sistema que continua em movimento, exatamente através do ciclo que descreve. Cada componente é refinado pelo próprio write-back que ele governa.
+The framework described here is not a final state. It's the April 2026 snapshot of a system that continues to move, precisely through the cycle it describes. Each component is refined by the very write-back it governs.
 
-Em termos da tríade, o framework é Dados (estrutura documental), Lógica (ciclo de execução) e Ação (write-back obrigatório), aplicado recursivamente a si mesmo.
+In triad terms, the framework is Data (document structure), Logic (execution cycle), and Action (mandatory write-back), applied recursively to itself.
 
-## 13. Próximos Passos
+## 13. Next Steps
 
-Este documento é a versão pública do framework que a FSTech opera internamente. A versão interna inclui:
+This document is the public version of the framework that FSTech operates internally. The internal version includes:
 
-- Templates executáveis de Pin e Spec por tipo de projeto
-- Toolchain de boot e handoff history-based
-- Protocolos adjacentes (isolamento de canal, notificação escalonada, firewall de qualificação)
-- Metodologia N5 completa aplicada a cada artefato
-- Integrações específicas com ferramentas de operação
+- Executable Pin and Spec templates by project type
+- History-based boot and handoff toolchain
+- Adjacent protocols (channel isolation, escalated notification, qualification firewall)
+- Full N5 methodology applied to each artifact
+- Specific integrations with operational tools
 
-A versão pública é suficiente para adoção em projetos reais. Organizações que quiserem acelerar adoção podem [contatar a FSTech diretamente](https://fstech.digital/contato).
+The public version is sufficient for adoption in real projects. Organizations wanting to accelerate adoption can [contact FSTech directly](https://fstech.digital/contato).
 
 ---
 
-## Sobre a FSTech
+## About FSTech
 
-A FSTech é uma consultoria brasileira focada em operacionalizar negócios através de ontologias executáveis e agentes de IA em produção. O produto é a operação, não o documento.
+FSTech is a Brazilian consultancy focused on operationalizing businesses through executable ontologies and AI agents in production. The product is the operation, not the document.
 
-- **Fundador:** Felipe Silva
+- **Founder:** Felipe Silva
 - **Site:** [fstech.digital](https://fstech.digital)
-- **Framework (canônico):** [fstech.digital/framework](https://fstech.digital/framework/)
+- **Framework (canonical):** [fstech.digital/framework](https://fstech.digital/framework/)
 - **Newsletter:** [fstech.digital/newsletter](https://fstech.digital/newsletter/)
 - **X:** [@fs_tech_](https://x.com/fs_tech_)
 
 ---
 
-Framework de Ontologia Operacional FSTech v1.0 · Abril 2026 · [CC BY 4.0](LICENSE)
+🇧🇷 **Leia em português:** [fstech.digital/framework](https://fstech.digital/framework/)
+
+---
+
+Operational Ontology Framework v1.0 · April 2026 · [CC BY 4.0](LICENSE)
