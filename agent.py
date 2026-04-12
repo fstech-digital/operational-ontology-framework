@@ -119,7 +119,7 @@ def generate_handoff(project_dir: str, focus: str, task_records: list):
     ) or "- See agent output"
 
     results = "\n".join(
-        f"- {r['task'][:60]}: {r['result'][:100]}" for r in task_records
+        f"- {r['task'][:80]}: {r['result'][:500]}" for r in task_records
     )
 
     content = f"""# Handoff — {now}
@@ -141,9 +141,13 @@ Next session should pick up the next open task in _spec.md.
     print(f"  Handoff saved: {path}")
 
 
-def execute_task(client, model: str, pin: str, facts: str, handoff: str, task: str) -> dict:
+def execute_task(client, model: str, pin: str, facts: str, handoff: str, task: str, session_learnings: list = None) -> dict:
     """Execute a single task via LLM and return structured result."""
     facts_section = f"\nAccumulated facts (long-term memory):\n{facts}" if facts else ""
+    learnings_section = ""
+    if session_learnings:
+        learnings_text = "\n".join(f"- {l}" for l in session_learnings)
+        learnings_section = f"\nLearned earlier this session:\n{learnings_text}"
     response = client.messages.create(
         model=model,
         max_tokens=MAX_TOKENS,
@@ -152,6 +156,7 @@ def execute_task(client, model: str, pin: str, facts: str, handoff: str, task: s
 Your Pin (immutable rules):
 {pin}
 {facts_section}
+{learnings_section}
 
 Previous handoff (context from last session):
 {handoff}
@@ -219,12 +224,13 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
     client = anthropic.Anthropic(api_key=api_key)
     spec_path = os.path.join(project_dir, "_spec.md")
     task_records = []
+    session_learnings = []  # Within-session knowledge accumulation
 
     for i, task in enumerate(tasks_to_run, 1):
         print(f"\n=== EXECUTE [{i}/{len(tasks_to_run)}] ===")
         print(f"  Task: {task[:80]}...")
 
-        result = execute_task(client, model, pin, facts, handoff, task)
+        result = execute_task(client, model, pin, facts, handoff, task, session_learnings)
         task_records.append(result)
 
         print(f"  Result: {result['result'][:200]}")
@@ -232,6 +238,7 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
 
         # --- WRITE-BACK ---
         mark_task_done(spec_path, task, result["learned"])
+        session_learnings.append(result["learned"])
         print(f"  Task marked done in _spec.md")
 
         # Reload spec for next task (it was modified)
