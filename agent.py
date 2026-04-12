@@ -29,19 +29,21 @@ import os
 import re
 import sys
 import glob
+import time
 from pathlib import Path
 from datetime import datetime
 
 try:
     import anthropic
 except ImportError:
-    print("Install anthropic SDK: pip install anthropic")
-    sys.exit(1)
+    anthropic = None
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
 MAX_SESSION_LEARNINGS = 10  # Keep last N learnings to prevent context blow-up
 CONTEXT_WARNING_RATIO = 0.5  # Warn when estimated tokens exceed this ratio of model capacity
+API_MAX_RETRIES = 2  # Retry transient API errors (rate limit, overload, timeout)
+API_RETRY_DELAY = 5  # Seconds between retries
 
 # Rough context window sizes by model family (chars, not tokens)
 MODEL_CONTEXT_CHARS = {
@@ -114,14 +116,29 @@ def mark_task_done(spec_path: str, task_line: str, learned: str):
 
 
 def parse_agent_response(output: str) -> dict:
-    """Parse structured JSON from agent response, with fallback to text parsing."""
-    # Try JSON first (preferred)
-    json_match = re.search(r"\{[^{}]*\"result\"[^{}]*\}", output, re.DOTALL | re.IGNORECASE)
-    if json_match:
-        try:
-            return json.loads(json_match.group())
-        except json.JSONDecodeError:
-            pass
+    """Parse structured JSON from agent response, with fallback to text parsing.
+
+    Handles nested JSON objects (e.g. {"result": "x", "details": {"count": 5}})
+    by scanning for balanced braces instead of a flat regex.
+    """
+    # Try to extract JSON by finding balanced braces containing "result"
+    for i, ch in enumerate(output):
+        if ch != "{":
+            continue
+        depth = 0
+        for j in range(i, len(output)):
+            if output[j] == "{":
+                depth += 1
+            elif output[j] == "}":
+                depth -= 1
+            if depth == 0:
+                candidate = output[i : j + 1]
+                if '"result"' in candidate.lower():
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        pass
+                break
 
     # Fallback: line-by-line parsing
     parsed = {"result": "", "decision": "", "learned": ""}
@@ -140,6 +157,64 @@ def parse_agent_response(output: str) -> dict:
         parsed["result"] = output[:200]
 
     return parsed
+
+
+def consolidate_facts(project_dir: str, task_records: list):
+    """Consolidation phase: promote session learnings to _facts.md, prune stale entries.
+
+    Each learning becomes a fact under "## Confirmed Patterns" with source and date.
+    Facts older than 90 days without re-verification are marked for review.
+    """
+    facts_path = Path(project_dir) / "_facts.md"
+    today = datetime.now().strftime("%Y-%m-%d")
+    cutoff = datetime.now().timestamp() - (90 * 86400)
+
+    # Collect non-trivial learnings from this session
+    new_facts = []
+    for r in task_records:
+        learned = r.get("learned", "").strip()
+        if learned and learned != "Task completed successfully":
+            new_facts.append(
+                f"- {learned} (source: agent session, {today}, confidence: observed)"
+            )
+
+    if not new_facts:
+        return
+
+    # Read or initialize facts file
+    if facts_path.exists():
+        content = facts_path.read_text()
+    else:
+        content = "# Facts — Project\n\n## Confirmed Patterns\n"
+
+    # Append new facts under "Confirmed Patterns"
+    insert_marker = "## Confirmed Patterns"
+    if insert_marker in content:
+        idx = content.index(insert_marker) + len(insert_marker)
+        # Find end of the heading line
+        newline = content.find("\n", idx)
+        if newline == -1:
+            newline = len(content)
+        facts_block = "\n" + "\n".join(new_facts)
+        content = content[:newline] + facts_block + content[newline:]
+    else:
+        content += f"\n## Confirmed Patterns\n\n" + "\n".join(new_facts) + "\n"
+
+    # Prune: flag stale facts (date pattern in parentheses, >90 days old)
+    pruned_lines = []
+    for line in content.splitlines():
+        date_match = re.search(r"(\d{4}-\d{2}-\d{2})", line)
+        if date_match and line.strip().startswith("- "):
+            try:
+                fact_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+                if fact_date.timestamp() < cutoff and "⚠️ stale" not in line:
+                    line = line.rstrip() + " ⚠️ stale — re-verify or remove"
+            except ValueError:
+                pass
+        pruned_lines.append(line)
+
+    facts_path.write_text("\n".join(pruned_lines))
+    print(f"  Facts consolidated: {len(new_facts)} new entries → _facts.md")
 
 
 def generate_handoff(project_dir: str, focus: str, task_records: list):
@@ -182,10 +257,8 @@ def execute_task(client, model: str, pin: str, facts: str, handoff: str, task: s
     if session_learnings:
         learnings_text = "\n".join(f"- {l}" for l in session_learnings)
         learnings_section = f"\nLearned earlier this session:\n{learnings_text}"
-    response = client.messages.create(
-        model=model,
-        max_tokens=MAX_TOKENS,
-        system=f"""You are an agent operating under the Operational Ontology Framework.
+
+    system_prompt = f"""You are an agent operating under the Operational Ontology Framework.
 
 Your Pin (immutable rules):
 {pin}
@@ -201,15 +274,47 @@ Respond in JSON format:
   "result": "What you did (1-2 sentences)",
   "decision": "Key decision made and why (1 sentence)",
   "learned": "What future tasks should know (1 sentence)"
-}}""",
-        messages=[{"role": "user", "content": f"Execute this task:\n{task}"}],
-    )
+}}"""
 
-    output = response.content[0].text
-    parsed = parse_agent_response(output)
-    parsed["task"] = task
-    parsed["raw"] = output
-    return parsed
+    last_error = None
+    for attempt in range(1 + API_MAX_RETRIES):
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=MAX_TOKENS,
+                system=system_prompt,
+                messages=[{"role": "user", "content": f"Execute this task:\n{task}"}],
+            )
+            output = response.content[0].text
+            parsed = parse_agent_response(output)
+            parsed["task"] = task
+            parsed["raw"] = output
+            return parsed
+        except anthropic.RateLimitError as e:
+            last_error = e
+            if attempt < API_MAX_RETRIES:
+                wait = API_RETRY_DELAY * (attempt + 1)
+                print(f"  ⚠️  Rate limited. Retrying in {wait}s... ({attempt + 1}/{API_MAX_RETRIES})")
+                time.sleep(wait)
+        except anthropic.APIStatusError as e:
+            last_error = e
+            if e.status_code >= 500 and attempt < API_MAX_RETRIES:
+                wait = API_RETRY_DELAY * (attempt + 1)
+                print(f"  ⚠️  API error ({e.status_code}). Retrying in {wait}s... ({attempt + 1}/{API_MAX_RETRIES})")
+                time.sleep(wait)
+            else:
+                break
+        except anthropic.APIConnectionError as e:
+            last_error = e
+            if attempt < API_MAX_RETRIES:
+                wait = API_RETRY_DELAY * (attempt + 1)
+                print(f"  ⚠️  Connection error. Retrying in {wait}s... ({attempt + 1}/{API_MAX_RETRIES})")
+                time.sleep(wait)
+            else:
+                break
+
+    print(f"\n  ❌ API call failed after {API_MAX_RETRIES + 1} attempts: {last_error}")
+    sys.exit(1)
 
 
 def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool = False):
@@ -250,6 +355,10 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
         return
 
     # --- EXECUTE ---
+    if anthropic is None:
+        print("  ERROR: anthropic SDK not installed. Run: pip install anthropic")
+        sys.exit(1)
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         print("  ERROR: ANTHROPIC_API_KEY not set. Copy .env.example to .env and add your key.")
@@ -281,6 +390,10 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
 
         # Reload spec for next task (it was modified)
         spec = read_file(spec_path)
+
+    # --- CONSOLIDATE ---
+    print(f"\n=== CONSOLIDATE ===")
+    consolidate_facts(project_dir, task_records)
 
     # --- HANDOFF ---
     print(f"\n=== HANDOFF ({len(task_records)} tasks completed) ===")
