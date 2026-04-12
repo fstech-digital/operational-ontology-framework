@@ -22,24 +22,24 @@ cd operational-ontology-framework
 
 pip install -r requirements.txt
 cp .env.example .env
-# Add your ANTHROPIC_API_KEY to .env
+# Adicione sua ANTHROPIC_API_KEY no .env
 
 python agent.py examples/customer-support
 ```
 
-The agent will Boot (load Pin + Spec + Handoff), Execute (pick first open task), Write-back (mark done, record learning), and Handoff (generate structured handoff for next session).
+O agente vai executar o ciclo completo: Boot (carrega Pin + Spec + Handoff), Executar (pega primeira tarefa aberta), Write-back (marca concluída, registra aprendizado) e Handoff (gera registro estruturado para a próxima sessão).
 
-### Start your own project
+### Crie seu próprio projeto
 
 ```bash
-mkdir my-project
-cp templates/_pin.md my-project/
-cp templates/_spec.md my-project/
+mkdir meu-projeto
+cp templates/_pin.md meu-projeto/
+cp templates/_spec.md meu-projeto/
 
-# Edit _pin.md with your domain rules
-# Edit _spec.md with your tasks
+# Edite _pin.md com as regras do seu domínio
+# Edite _spec.md com suas tarefas
 
-python agent.py my-project
+python agent.py meu-projeto
 ```
 
 ---
