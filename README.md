@@ -84,17 +84,26 @@ Boot (+ Retrieval) → Execute → Write-back → Consolidate → Handoff
 
 **Agent writes its own memory.** Write-back doesn't depend on human discipline. The agent updates Spec, generates Handoff, commits changes. The discipline is in the prompt, not in people training.
 
-## Positioning
+## How It Compares
 
-Complements, doesn't compete with orchestration frameworks (LangChain, CrewAI, AutoGen). Those solve *how* the agent calls tools. This solves *how* the agent maintains auditable state between calls.
+| | **OOF (this)** | **LangChain / LangGraph** | **CrewAI** | **Mem0** | **MemPalace** | **ESAA** | **Letta** | **Palantir Foundry** |
+|---|---|---|---|---|---|---|---|---|
+| **What it solves** | Auditable state between sessions | Call orchestration + memory | Multi-agent orchestration | Standalone memory layer | Episodic recall | State for code agents | OS-like memory runtime | Enterprise ontology |
+| **Memory lives in** | Filesystem (markdown + git) | Vector DB (Chroma, pgvector) | Vector + hierarchical scopes | Vector + Graph (Pro) | Verbatim + ChromaDB | Event log (JSONL + SHA-256) | Tiered (core/recall/archival) | Centralized ontology |
+| **Infra required** | None (filesystem only) | Vector DB + checkpointer | ChromaDB or similar | Qdrant/Chroma/pgvector | Python + ChromaDB | JSONL + YAML contracts | Docker + LLM providers | Full proprietary stack |
+| **Auditable decisions** | Yes (decisions + reasoning + git bisect) | Partial (execution logs) | Partial (memory scopes) | No (similarity recall) | No (probabilistic recall) | Yes (deterministic replay + hash) | Partial (agent-managed) | Yes (digital twin) |
+| **Model portable** | Yes (tested across Claude, Gemini, local) | No (LangGraph runtime) | No (CrewAI runtime) | Yes (framework-agnostic) | Partial (local only) | No (code agents only) | Partial (multi-LLM) | No (vendor lock-in) |
+| **Long-term memory** | Yes (Fact Store v2.0) | Via LangMem SDK | Resets between runs | Yes (vector + graph) | Yes (verbatim store) | Event replay | Yes (archival tier) | Yes (ontology) |
+| **Agent writes own memory** | Yes (write-back in cycle) | No (external persistence) | No (resets on exit) | No (SDK calls) | No (MCP tools) | No (orchestrator writes) | Yes (self-editing context) | No (platform manages) |
+| **Production evidence** | 6 months, 5 agents, 3 clients | Fortune 500 via LangSmith | 60% Fortune 500 | SOC 2, HIPAA | 3 days old | Paper published, no production | Startups | Fortune 100, governments |
+| **Cost** | Free (CC BY 4.0) | Free OSS + paid cloud | Free OSS + Enterprise | $0–249/mo | Free | Free | $0–200/mo | $M+/year |
 
-| | Orchestration frameworks | This framework |
-|---|---|---|
-| Solves | How agents call tools | How agents maintain state |
-| Memory | Vector DB / embeddings | Filesystem / git |
-| Dependency | Specific stack | Model and infra agnostic |
+**Key differences:**
 
-References: [Palantir Foundry](https://www.palantir.com/platforms/foundry/) (same Closed World Assumption, simpler infra), [Microsoft Fabric IQ](https://learn.microsoft.com/en-us/fabric/iq/ontology/overview) (same concept, no vendor lock-in).
+- **Orchestration frameworks** (LangChain, CrewAI) solve how agents call tools. OOF solves how agents maintain state between calls. They complement each other.
+- **Memory layers** (Mem0, MemPalace, Letta) solve recall (finding relevant facts). OOF solves governance (recording decisions with justification, ensuring portability).
+- **ESAA** shares the same principle (memory outside the model, auditable) but targets code agents with event sourcing. OOF targets any business domain with document artifacts.
+- **Palantir Foundry** validates the same thesis at enterprise scale. OOF delivers the same paradigm with radically simpler infrastructure (markdown + git vs. proprietary stack).
 
 ## In Production
 

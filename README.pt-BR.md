@@ -84,17 +84,26 @@ Boot (+ Retrieval) → Executar → Write-back → Consolidar → Handoff
 
 **O agente escreve sua própria memória.** Write-back não depende de disciplina humana. O agente atualiza a Spec, gera o Handoff, commita as mudanças. A disciplina está no prompt, não no treinamento de pessoas.
 
-## Posicionamento
+## Comparativo
 
-Complementa, não compete com frameworks de orquestração (LangChain, CrewAI, AutoGen). Esses resolvem *como* o agente chama ferramentas. Este resolve *como* o agente mantém estado auditável entre chamadas.
+| | **OOF (este)** | **LangChain / LangGraph** | **CrewAI** | **Mem0** | **MemPalace** | **ESAA** | **Letta** | **Palantir Foundry** |
+|---|---|---|---|---|---|---|---|---|
+| **O que resolve** | Estado auditável entre sessões | Orquestração de chamadas + memória | Orquestração multi-agente | Camada de memória standalone | Recall episódico | Estado para code agents | Runtime com memória OS-like | Ontologia enterprise |
+| **Memória vive em** | Filesystem (markdown + git) | Banco vetorial (Chroma, pgvector) | Vetorial + escopos hierárquicos | Vetorial + Graph (Pro) | Verbatim + ChromaDB | Event log (JSONL + SHA-256) | Tiered (core/recall/archival) | Ontologia centralizada |
+| **Infra necessária** | Nenhuma (só filesystem) | Banco vetorial + checkpointer | ChromaDB ou similar | Qdrant/Chroma/pgvector | Python + ChromaDB | JSONL + contracts YAML | Docker + providers LLM | Stack proprietário completo |
+| **Decisões auditáveis** | Sim (decisões + justificativa + git bisect) | Parcial (logs de execução) | Parcial (memory scopes) | Não (recall por similaridade) | Não (recall probabilístico) | Sim (replay determinístico + hash) | Parcial (agente gerencia) | Sim (digital twin) |
+| **Portável entre modelos** | Sim (testado Claude, Gemini, local) | Não (LangGraph runtime) | Não (CrewAI runtime) | Sim (framework-agnostic) | Parcial (local) | Não (code agents) | Parcial (multi-LLM) | Não (vendor lock-in) |
+| **Memória de longo prazo** | Sim (Fact Store v2.0) | Via LangMem SDK | Reseta entre runs | Sim (vetorial + graph) | Sim (verbatim store) | Replay de eventos | Sim (archival tier) | Sim (ontologia) |
+| **Agente escreve própria memória** | Sim (write-back no ciclo) | Não (persistência externa) | Não (reseta ao sair) | Não (chamadas SDK) | Não (tools MCP) | Não (orchestrator escreve) | Sim (self-editing context) | Não (plataforma gerencia) |
+| **Evidência de produção** | 6 meses, 5 agentes, 3 clientes | Fortune 500 via LangSmith | 60% Fortune 500 | SOC 2, HIPAA | 3 dias de existência | Paper publicado, sem produção | Startups | Fortune 100, governos |
+| **Custo** | Grátis (CC BY 4.0) | OSS grátis + cloud pago | OSS grátis + Enterprise | $0–249/mês | Grátis | Grátis | $0–200/mês | $M+/ano |
 
-| | Frameworks de orquestração | Este framework |
-|---|---|---|
-| Resolve | Como agentes chamam ferramentas | Como agentes mantêm estado |
-| Memória | Banco vetorial / embeddings | Filesystem / git |
-| Dependência | Stack específica | Agnóstico de modelo e infra |
+**Diferenças chave:**
 
-Referências: [Palantir Foundry](https://www.palantir.com/platforms/foundry/) (mesma Closed World Assumption, infra mais simples), [Microsoft Fabric IQ](https://learn.microsoft.com/en-us/fabric/iq/ontology/overview) (mesmo conceito, sem vendor lock-in).
+- **Frameworks de orquestração** (LangChain, CrewAI) resolvem como agentes chamam ferramentas. OOF resolve como agentes mantêm estado entre chamadas. Complementam-se.
+- **Camadas de memória** (Mem0, MemPalace, Letta) resolvem recall (encontrar fatos relevantes). OOF resolve governança (registrar decisões com justificativa, garantir portabilidade).
+- **ESAA** compartilha o mesmo princípio (memória fora do modelo, auditável) mas foca em code agents com event sourcing. OOF foca em qualquer domínio de negócio com artefatos documentais.
+- **Palantir Foundry** valida a mesma tese em escala enterprise. OOF entrega o mesmo paradigma com infra radicalmente mais simples (markdown + git vs stack proprietário).
 
 ## Em Produção
 
