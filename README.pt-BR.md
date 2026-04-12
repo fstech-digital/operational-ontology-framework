@@ -7,7 +7,7 @@ Como operar agentes de IA em produção com estado auditável, sem memória pers
 | | |
 |---|---|
 | **Autor** | Felipe Silva |
-| **Versão** | 2.0 |
+| **Versão** | 2.1 |
 | **Licença** | [CC BY 4.0](LICENSE) |
 | **Framework completo (13 seções)** | [fstech.digital/framework](https://fstech.digital/framework/) |
 
@@ -57,8 +57,9 @@ A memória vive no filesystem, não no modelo. Quatro arquivos markdown, version
 | **Spec** | Checklist de tarefas, estado de execução, aprendizados | Muda toda sessão |
 | **Handoff** | Memória de sessão: decisões, resultados, briefing de continuação | Novo arquivo a cada sessão |
 | **Facts** | Conhecimento acumulado de longo prazo com metadata | Cresce ao longo do projeto |
+| **Skills** | Procedimentos reutilizáveis que melhoram com a prática | Refinado a cada execução |
 
-**Pin** = o que o projeto *é*. **Spec** = o que *fazer*. **Handoff** = o que *aconteceu*. **Facts** = o que foi *aprendido*.
+**Pin** = o que o projeto *é*. **Spec** = o que *fazer*. **Handoff** = o que *aconteceu*. **Facts** = o que foi *aprendido*. **Skills** = o que o agente *sabe fazer*.
 
 ## Ciclo de Execução
 
@@ -123,7 +124,8 @@ Seis meses, cinco agentes, três clientes. Frota migrou entre versões do Claude
 │   ├── _pin.md               # Pin em branco com orientação
 │   ├── _spec.md              # Spec em branco com orientação
 │   ├── _handoff.md           # Handoff em branco com orientação
-│   └── _facts.md             # Fact Store em branco com orientação
+│   ├── _facts.md             # Fact Store em branco com orientação
+│   └── _skills.md            # Catálogo de Skills em branco com orientação
 ├── examples/
 │   └── customer-support/     # Projeto fictício completo
 │       ├── _pin.md
@@ -157,4 +159,4 @@ Consultoria brasileira. Ontologias executáveis e agentes de IA em produção. O
 
 ---
 
-Framework de Ontologia Operacional v2.0 · Abril 2026 · [CC BY 4.0](LICENSE)
+Framework de Ontologia Operacional v2.1 · Abril 2026 · [CC BY 4.0](LICENSE)

@@ -7,7 +7,7 @@ How to run AI agents in production with auditable state, no persistent memory in
 | | |
 |---|---|
 | **Author** | Felipe Silva |
-| **Version** | 2.0 |
+| **Version** | 2.1 |
 | **License** | [CC BY 4.0](LICENSE) |
 | **Full framework (13 sections)** | [fstech.digital/framework](https://fstech.digital/framework/) |
 
@@ -57,8 +57,9 @@ Memory lives in the filesystem, not in the model. Four markdown files, versioned
 | **Spec** | Task checklist, execution state, learnings | Changes every session |
 | **Handoff** | Session memory: decisions, results, continuation briefing | New file each session |
 | **Facts** | Long-term accumulated knowledge with metadata | Grows over project lifetime |
+| **Skills** | Reusable procedures that improve through practice | Refined every execution |
 
-**Pin** = what the project *is*. **Spec** = what to *do*. **Handoff** = what *happened*. **Facts** = what was *learned*.
+**Pin** = what the project *is*. **Spec** = what to *do*. **Handoff** = what *happened*. **Facts** = what was *learned*. **Skills** = what the agent *knows how to do*.
 
 ## Execution Cycle
 
@@ -90,7 +91,7 @@ Boot (+ Retrieval) → Execute → Write-back → Consolidate → Handoff
 
 | | **OOF (this)** | **LangChain / LangGraph** | **CrewAI** | **Mem0** | **MemPalace** | **ESAA** | **Letta** | **Palantir Foundry** |
 |---|---|---|---|---|---|---|---|---|
-| **What it solves** | Auditable state between sessions | Call orchestration + memory | Multi-agent orchestration | Standalone memory layer | Episodic recall | State for code agents | OS-like memory runtime | Enterprise ontology |
+| **What it solves** | Auditable state + reusable skills | Call orchestration + memory | Multi-agent orchestration | Standalone memory layer | Episodic recall | State for code agents | OS-like memory runtime | Enterprise ontology |
 | **Memory lives in** | Filesystem (markdown + git) | Vector DB (Chroma, pgvector) | Vector + hierarchical scopes | Vector + Graph (Pro) | Verbatim + ChromaDB | Event log (JSONL + SHA-256) | Tiered (core/recall/archival) | Centralized ontology |
 | **Infra required** | None (filesystem only) | Vector DB + checkpointer | ChromaDB or similar | Qdrant/Chroma/pgvector | Python + ChromaDB | JSONL + YAML contracts | Docker + LLM providers | Full proprietary stack |
 | **Auditable decisions** | Yes (decisions + reasoning + git bisect) | Partial (execution logs) | Partial (memory scopes) | No (similarity recall) | No (probabilistic recall) | Yes (deterministic replay + hash) | Partial (agent-managed) | Yes (digital twin) |
@@ -123,7 +124,8 @@ Six months, five agents, three clients. Fleet migrated across Claude versions, G
 │   ├── _pin.md               # Blank Pin with guidance
 │   ├── _spec.md              # Blank Spec with guidance
 │   ├── _handoff.md           # Blank Handoff with guidance
-│   └── _facts.md             # Blank Fact Store with guidance
+│   ├── _facts.md             # Blank Fact Store with guidance
+│   └── _skills.md            # Blank Skills catalog with guidance
 ├── examples/
 │   └── customer-support/     # Complete fictional project
 │       ├── _pin.md
@@ -157,4 +159,4 @@ Brazilian consultancy. Executable ontologies and AI agents in production. The pr
 
 ---
 
-Operational Ontology Framework v2.0 · April 2026 · [CC BY 4.0](LICENSE)
+Operational Ontology Framework v2.1 · April 2026 · [CC BY 4.0](LICENSE)
