@@ -39,6 +39,8 @@ python agent.py my-project
 
 **Options:** `--all` (run all tasks) · `--model claude-haiku-4-5-20251001` (change model) · `--dry-run` (inspect without calling LLM)
 
+**Other providers:** `ADAPTER=openai OPENAI_API_KEY=sk-... python agent.py examples/customer-support --model gpt-4o` (see `adapters.py`)
+
 ---
 
 ## The Problem
@@ -114,7 +116,9 @@ Six months, five agents, three clients. Fleet migrated across Claude versions, G
 ## Repo Structure
 
 ```
-├── agent.py                  # Reference implementation (~200 lines)
+├── agent.py                  # Reference implementation (~400 lines)
+├── adapters.py               # LLM provider adapters (Anthropic, OpenAI)
+├── test_agent.py             # Unit tests (pytest, 29 tests)
 ├── templates/
 │   ├── _pin.md               # Blank Pin with guidance
 │   ├── _spec.md              # Blank Spec with guidance

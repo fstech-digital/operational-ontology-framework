@@ -1,4 +1,14 @@
 .env
 __pycache__/
 *.pyc
+*.pyo
 .venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+*.swp
+*.swo
+*~
+.DS_Store

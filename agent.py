@@ -10,17 +10,21 @@ Usage:
     python agent.py examples/customer-support --model claude-haiku-4-5-20251001
 
 The agent will:
-1. Boot     — Load Pin (rules) + Spec (tasks) + latest Handoff
-2. Execute  — Pick open task(s) and work on them via LLM
-3. Write-back — Mark task done in Spec, record learning
-4. Handoff  — Generate structured handoff for next session
+1. Boot        — Load Pin (rules) + Spec (tasks) + Facts + latest Handoff
+2. Execute     — Pick open task(s) and work on them via LLM
+3. Write-back  — Mark task done in Spec, record learning
+4. Consolidate — Promote learnings to Fact Store, prune stale facts
+5. Handoff     — Generate structured handoff for next session
 
 Options:
     --all       Execute all open tasks in sequence (default: one task)
     --model     Override model (default: MODEL env var or claude-sonnet-4-6)
     --dry-run   Boot and show tasks without calling the LLM
 
-Requires: ANTHROPIC_API_KEY in environment or .env file
+LLM Provider (set ADAPTER env var):
+    anthropic   (default) Requires ANTHROPIC_API_KEY
+    openai      Requires OPENAI_API_KEY. Use --model gpt-4o or similar.
+    See adapters.py to add your own provider.
 """
 
 import argparse
@@ -37,6 +41,8 @@ try:
     import anthropic
 except ImportError:
     anthropic = None
+
+from adapters import get_adapter
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
@@ -250,8 +256,8 @@ Next session should pick up the next open task in _spec.md.
     print(f"  Handoff saved: {path}")
 
 
-def execute_task(client, model: str, pin: str, facts: str, handoff: str, task: str, session_learnings: list = None) -> dict:
-    """Execute a single task via LLM and return structured result."""
+def execute_task(adapter, model: str, pin: str, facts: str, handoff: str, task: str, session_learnings: list = None) -> dict:
+    """Execute a single task via LLM adapter and return structured result."""
     facts_section = f"\nAccumulated facts (long-term memory):\n{facts}" if facts else ""
     learnings_section = ""
     if session_learnings:
@@ -276,39 +282,27 @@ Respond in JSON format:
   "learned": "What future tasks should know (1 sentence)"
 }}"""
 
+    messages = [{"role": "user", "content": f"Execute this task:\n{task}"}]
+
     last_error = None
     for attempt in range(1 + API_MAX_RETRIES):
         try:
-            response = client.messages.create(
-                model=model,
-                max_tokens=MAX_TOKENS,
-                system=system_prompt,
-                messages=[{"role": "user", "content": f"Execute this task:\n{task}"}],
-            )
-            output = response.content[0].text
+            output = adapter.create_message(model, MAX_TOKENS, system_prompt, messages)
             parsed = parse_agent_response(output)
             parsed["task"] = task
             parsed["raw"] = output
             return parsed
-        except anthropic.RateLimitError as e:
+        except adapter.retryable_errors as e:
             last_error = e
             if attempt < API_MAX_RETRIES:
                 wait = API_RETRY_DELAY * (attempt + 1)
-                print(f"  ⚠️  Rate limited. Retrying in {wait}s... ({attempt + 1}/{API_MAX_RETRIES})")
+                print(f"  ⚠️  {type(e).__name__}. Retrying in {wait}s... ({attempt + 1}/{API_MAX_RETRIES})")
                 time.sleep(wait)
-        except anthropic.APIStatusError as e:
+        except adapter.status_error as e:
             last_error = e
-            if e.status_code >= 500 and attempt < API_MAX_RETRIES:
+            if hasattr(e, "status_code") and e.status_code >= 500 and attempt < API_MAX_RETRIES:
                 wait = API_RETRY_DELAY * (attempt + 1)
                 print(f"  ⚠️  API error ({e.status_code}). Retrying in {wait}s... ({attempt + 1}/{API_MAX_RETRIES})")
-                time.sleep(wait)
-            else:
-                break
-        except anthropic.APIConnectionError as e:
-            last_error = e
-            if attempt < API_MAX_RETRIES:
-                wait = API_RETRY_DELAY * (attempt + 1)
-                print(f"  ⚠️  Connection error. Retrying in {wait}s... ({attempt + 1}/{API_MAX_RETRIES})")
                 time.sleep(wait)
             else:
                 break
@@ -355,16 +349,7 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
         return
 
     # --- EXECUTE ---
-    if anthropic is None:
-        print("  ERROR: anthropic SDK not installed. Run: pip install anthropic")
-        sys.exit(1)
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        print("  ERROR: ANTHROPIC_API_KEY not set. Copy .env.example to .env and add your key.")
-        sys.exit(1)
-
-    client = anthropic.Anthropic(api_key=api_key)
+    adapter = get_adapter()
     spec_path = os.path.join(project_dir, "_spec.md")
     task_records = []
     session_learnings = []  # Within-session knowledge accumulation
@@ -377,7 +362,7 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
         capped_learnings = session_learnings[-MAX_SESSION_LEARNINGS:]
         check_context_warning(model, pin, facts, handoff, capped_learnings)
 
-        result = execute_task(client, model, pin, facts, handoff, task, capped_learnings)
+        result = execute_task(adapter, model, pin, facts, handoff, task, capped_learnings)
         task_records.append(result)
 
         print(f"  Result: {result['result'][:200]}")
