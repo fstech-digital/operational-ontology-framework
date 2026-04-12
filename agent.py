@@ -24,6 +24,7 @@ Options:
 LLM Provider (set ADAPTER env var):
     anthropic   (default) Requires ANTHROPIC_API_KEY
     openai      Requires OPENAI_API_KEY. Use --model gpt-4o or similar.
+    ollama      Local models. Use --model gemma4:e2b, llama3, etc. No API key needed.
     See adapters.py to add your own provider.
 """
 

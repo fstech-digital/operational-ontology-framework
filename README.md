@@ -39,7 +39,14 @@ python agent.py my-project
 
 **Options:** `--all` (run all tasks) · `--model claude-haiku-4-5-20251001` (change model) · `--dry-run` (inspect without calling LLM)
 
-**Other providers:** `ADAPTER=openai OPENAI_API_KEY=sk-... python agent.py examples/customer-support --model gpt-4o` (see `adapters.py`)
+**Other providers:**
+```bash
+# OpenAI
+ADAPTER=openai OPENAI_API_KEY=sk-... python agent.py examples/customer-support --model gpt-4o
+
+# Ollama (local models — no API key needed)
+ADAPTER=ollama python agent.py examples/customer-support --model gemma4:e2b
+```
 
 ---
 
@@ -118,7 +125,7 @@ Six months, five agents, three clients. Fleet migrated across Claude versions, G
 
 ```
 ├── agent.py                  # Reference implementation (~400 lines)
-├── adapters.py               # LLM provider adapters (Anthropic, OpenAI)
+├── adapters.py               # LLM provider adapters (Anthropic, OpenAI, Ollama)
 ├── test_agent.py             # Unit tests (pytest, 29 tests)
 ├── templates/
 │   ├── _pin.md               # Blank Pin with guidance
