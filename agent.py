@@ -1,21 +1,30 @@
 #!/usr/bin/env python3
 """
-Minimal Operational Ontology Agent
-===================================
-Demonstrates the Pin/Spec/Handoff cycle in ~100 lines.
+Operational Ontology Agent — Reference Implementation
+======================================================
+Demonstrates the Pin/Spec/Handoff cycle.
 
 Usage:
     python agent.py examples/customer-support
+    python agent.py examples/customer-support --all
+    python agent.py examples/customer-support --model claude-haiku-4-5-20251001
 
 The agent will:
-1. Boot  — Load Pin (rules) + Spec (tasks) + latest Handoff
-2. Execute — Pick the first open task and work on it via LLM
+1. Boot     — Load Pin (rules) + Spec (tasks) + latest Handoff
+2. Execute  — Pick open task(s) and work on them via LLM
 3. Write-back — Mark task done in Spec, record learning
-4. Handoff — Generate structured handoff for next session
+4. Handoff  — Generate structured handoff for next session
+
+Options:
+    --all       Execute all open tasks in sequence (default: one task)
+    --model     Override model (default: MODEL env var or claude-sonnet-4-6)
+    --dry-run   Boot and show tasks without calling the LLM
 
 Requires: ANTHROPIC_API_KEY in environment or .env file
 """
 
+import argparse
+import json
 import os
 import re
 import sys
@@ -28,6 +37,9 @@ try:
 except ImportError:
     print("Install anthropic SDK: pip install anthropic")
     sys.exit(1)
+
+DEFAULT_MODEL = "claude-sonnet-4-6"
+MAX_TOKENS = 4096
 
 
 def load_env():
@@ -51,27 +63,64 @@ def latest_handoff(project_dir: str) -> str:
     return read_file(files[-1]) if files else "(no previous handoff)"
 
 
-def find_first_open_task(spec: str):
+def find_open_tasks(spec: str) -> list:
+    tasks = []
     for line in spec.splitlines():
         if re.match(r"\s*- \[ \]", line):
-            return line.strip()
-    return None
+            tasks.append(line.strip())
+    return tasks
 
 
-def mark_task_done(spec_path: str, task_line: str, result: str):
+def mark_task_done(spec_path: str, task_line: str, learned: str):
     spec = Path(spec_path).read_text()
     done_line = task_line.replace("- [ ]", "- [x]")
-    done_line += f"\n  - Learned: {result[:200]}"
-    # Replace only the first occurrence to avoid duplicates
+    done_line += f"\n  - Learned: {learned[:200]}"
     spec = spec.replace(task_line, done_line, 1)
     Path(spec_path).write_text(spec)
 
 
-def generate_handoff(project_dir: str, focus: str, decisions: str, results: str):
+def parse_agent_response(output: str) -> dict:
+    """Parse structured JSON from agent response, with fallback to text parsing."""
+    # Try JSON first (preferred)
+    json_match = re.search(r"\{[^{}]*\"result\"[^{}]*\}", output, re.DOTALL | re.IGNORECASE)
+    if json_match:
+        try:
+            return json.loads(json_match.group())
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback: line-by-line parsing
+    parsed = {"result": "", "decision": "", "learned": ""}
+    for line in output.splitlines():
+        lower = line.lower().strip()
+        if lower.startswith("result:") or lower.startswith('"result"'):
+            parsed["result"] = line.split(":", 1)[-1].strip().strip('"').strip(",")
+        elif lower.startswith("decision:") or lower.startswith('"decision"'):
+            parsed["decision"] = line.split(":", 1)[-1].strip().strip('"').strip(",")
+        elif lower.startswith("learned:") or lower.startswith('"learned"'):
+            parsed["learned"] = line.split(":", 1)[-1].strip().strip('"').strip(",")
+
+    if not parsed["learned"]:
+        parsed["learned"] = "Task completed successfully"
+    if not parsed["result"]:
+        parsed["result"] = output[:200]
+
+    return parsed
+
+
+def generate_handoff(project_dir: str, focus: str, task_records: list):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     date_slug = datetime.now().strftime("%Y-%m-%d-%H%M")
     handoff_dir = Path(project_dir) / "handoffs"
     handoff_dir.mkdir(exist_ok=True)
+
+    decisions = "\n".join(
+        f"- {r['decision']}" for r in task_records if r.get("decision")
+    ) or "- See agent output"
+
+    results = "\n".join(
+        f"- {r['task'][:60]}: {r['result'][:100]}" for r in task_records
+    )
 
     content = f"""# Handoff — {now}
 
@@ -92,7 +141,37 @@ Next session should pick up the next open task in _spec.md.
     print(f"  Handoff saved: {path}")
 
 
-def run_cycle(project_dir: str):
+def execute_task(client, model: str, pin: str, handoff: str, task: str) -> dict:
+    """Execute a single task via LLM and return structured result."""
+    response = client.messages.create(
+        model=model,
+        max_tokens=MAX_TOKENS,
+        system=f"""You are an agent operating under the Operational Ontology Framework.
+
+Your Pin (immutable rules):
+{pin}
+
+Previous handoff (context from last session):
+{handoff}
+
+Execute the task given to you. Be specific and actionable.
+Respond in JSON format:
+{{
+  "result": "What you did (1-2 sentences)",
+  "decision": "Key decision made and why (1 sentence)",
+  "learned": "What future tasks should know (1 sentence)"
+}}""",
+        messages=[{"role": "user", "content": f"Execute this task:\n{task}"}],
+    )
+
+    output = response.content[0].text
+    parsed = parse_agent_response(output)
+    parsed["task"] = task
+    parsed["raw"] = output
+    return parsed
+
+
+def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool = False):
     # --- BOOT ---
     print("\n=== BOOT ===")
     pin = read_file(os.path.join(project_dir, "_pin.md"))
@@ -109,83 +188,77 @@ def run_cycle(project_dir: str):
     print(f"  Pin loaded: {len(pin)} chars")
     print(f"  Spec loaded: {len(spec)} chars")
     print(f"  Handoff loaded: {len(handoff)} chars")
+    print(f"  Model: {model}")
 
-    # --- EXECUTE ---
-    print("\n=== EXECUTE ===")
-    task = find_first_open_task(spec)
-    if not task:
-        print("  No open tasks. Cycle complete.")
+    # --- FIND TASKS ---
+    open_tasks = find_open_tasks(spec)
+    if not open_tasks:
+        print("\n  No open tasks. Cycle complete.")
         return
 
-    print(f"  Task: {task[:80]}...")
+    tasks_to_run = open_tasks if run_all else open_tasks[:1]
+    print(f"\n  Open tasks: {len(open_tasks)}")
+    print(f"  Will execute: {len(tasks_to_run)} ({'--all' if run_all else 'first only'})")
 
+    if dry_run:
+        print("\n=== DRY RUN — tasks found ===")
+        for i, t in enumerate(tasks_to_run, 1):
+            print(f"  [{i}] {t[:80]}")
+        return
+
+    # --- EXECUTE ---
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         print("  ERROR: ANTHROPIC_API_KEY not set. Copy .env.example to .env and add your key.")
         sys.exit(1)
 
     client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
-        system=f"""You are an agent operating under the Operational Ontology Framework.
-
-Your Pin (immutable rules):
-{pin}
-
-Previous handoff (context from last session):
-{handoff}
-
-Execute the task given to you. Be specific and actionable.
-After completing, provide:
-1. RESULT: What you did (1-2 sentences)
-2. DECISION: Key decision made and why (1 sentence)
-3. LEARNED: What future tasks should know (1 sentence)""",
-        messages=[{"role": "user", "content": f"Execute this task:\n{task}"}],
-    )
-
-    output = response.content[0].text
-    print(f"  Agent response:\n{output[:500]}")
-
-    # --- WRITE-BACK ---
-    print("\n=== WRITE-BACK ===")
-    learned = ""
-    for line in output.splitlines():
-        if line.upper().startswith("LEARNED:") or line.upper().startswith("3."):
-            learned = line.split(":", 1)[-1].strip() if ":" in line else line
-            break
-    if not learned:
-        learned = "Task completed successfully"
-
     spec_path = os.path.join(project_dir, "_spec.md")
-    mark_task_done(spec_path, task, learned)
-    print(f"  Task marked done in _spec.md")
+    task_records = []
+
+    for i, task in enumerate(tasks_to_run, 1):
+        print(f"\n=== EXECUTE [{i}/{len(tasks_to_run)}] ===")
+        print(f"  Task: {task[:80]}...")
+
+        result = execute_task(client, model, pin, handoff, task)
+        task_records.append(result)
+
+        print(f"  Result: {result['result'][:200]}")
+        print(f"  Learned: {result['learned'][:200]}")
+
+        # --- WRITE-BACK ---
+        mark_task_done(spec_path, task, result["learned"])
+        print(f"  Task marked done in _spec.md")
+
+        # Reload spec for next task (it was modified)
+        spec = read_file(spec_path)
 
     # --- HANDOFF ---
-    print("\n=== HANDOFF ===")
-    focus = task[6:60] + "..."  # strip "- [ ] " prefix
-    decisions = ""
-    for line in output.splitlines():
-        if line.upper().startswith("DECISION:") or line.upper().startswith("2."):
-            decisions = line
-            break
-    results = f"- {task[:60]}: completed"
-
-    generate_handoff(project_dir, focus, decisions or "See agent output", results)
+    print(f"\n=== HANDOFF ({len(task_records)} tasks completed) ===")
+    focus = f"{len(task_records)} tasks executed in {project_dir}"
+    generate_handoff(project_dir, focus, task_records)
     print("\n=== CYCLE COMPLETE ===\n")
 
 
-if __name__ == "__main__":
+def main():
     load_env()
 
-    if len(sys.argv) < 2:
-        print("Usage: python agent.py <project-directory>")
-        print("Example: python agent.py examples/customer-support")
+    parser = argparse.ArgumentParser(
+        description="Operational Ontology Agent — Pin/Spec/Handoff cycle"
+    )
+    parser.add_argument("project_dir", help="Path to project directory with _pin.md and _spec.md")
+    parser.add_argument("--all", action="store_true", help="Execute all open tasks (default: first only)")
+    parser.add_argument("--model", default=None, help=f"Model to use (default: MODEL env or {DEFAULT_MODEL})")
+    parser.add_argument("--dry-run", action="store_true", help="Show tasks without calling LLM")
+    args = parser.parse_args()
+
+    if not Path(args.project_dir).is_dir():
+        print(f"Directory not found: {args.project_dir}")
         sys.exit(1)
 
-    project_dir = sys.argv[1]
-    if not Path(project_dir).is_dir():
-        print(f"Directory not found: {project_dir}")
-        sys.exit(1)
+    model = args.model or os.environ.get("MODEL", DEFAULT_MODEL)
+    run_cycle(args.project_dir, model=model, run_all=args.all, dry_run=args.dry_run)
 
-    run_cycle(project_dir)
+
+if __name__ == "__main__":
+    main()
