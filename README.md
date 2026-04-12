@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | **Author** | Felipe Silva |
-| **Version** | 1.0 |
+| **Version** | 2.0 |
 | **Date** | April 2026 |
 | **License** | [CC BY 4.0](LICENSE) |
 | **Canonical** | [fstech.digital/framework](https://fstech.digital/framework/) |
@@ -84,7 +84,7 @@ The classic structure is linear: D to L to A. Practice shows the loop is continu
 
 ## 4. Executable Components
 
-The framework implements D+L+A as three minimal document artifacts. Each artifact is a text file, versioned, readable by humans and models.
+The framework implements D+L+A as four minimal document artifacts. Each artifact is a text file, versioned, readable by humans and models.
 
 ### 4.1 Pin (Invariant) — D + L
 
@@ -127,15 +127,42 @@ Structured record that feeds the next cycle. Not an execution log (the what), bu
 
 A fine distinction matters: this is not "zero persistence." The filesystem persists, the ontology persists, the handoff persists. What's zero is state maintained inside the model. Memory lives in the document, not in the neural network weights.
 
+### 4.4 Facts (Accumulated Memory) — D
+
+Structured file that persists facts learned during execution. The Handoff records what happened in one session. The Fact Store records what was learned across all sessions. It is the agent's long-term memory.
+
+The distinction is temporal: Handoff is volatile (each session generates a new one), Facts is cumulative (grows over the project's lifetime). Without the Fact Store, a fact learned in session 3 disappears by session 50 unless someone manually wrote it into a Pin.
+
+**Each fact carries metadata:**
+- Source (which session, task, or event originated the fact)
+- Date recorded
+- Confidence (verified, observed, inferred)
+- Last verified (for stale fact detection)
+
+**What goes in the Fact Store:**
+- Discovered preferences of clients or stakeholders
+- Observed behaviors of integrated systems (latency, limits, edge cases)
+- Design decisions and their justifications that transcend a single session
+- Patterns confirmed by practice (what works, what fails silently)
+
+**What doesn't go in the Fact Store:**
+- Immutable domain rules — that's the Pin
+- Execution task state — that's the Spec
+- Single-session context — that's the Handoff
+
+The simplest implementation is one markdown file per domain with a central index. FSTech operates with ~30 fact files indexed by a global index, queryable by text and semantic search. No database involved.
+
 ## 5. Execution Cycle
 
-The framework operates in four phases. Each phase is explicit, each phase generates an artifact.
+The framework operates in five phases. Each phase is explicit, each phase generates an artifact.
 
-**Boot → Execute → Write-back → Handoff.** A cycle that closes on itself every session.
+**Boot → Execute → Write-back → Consolidate → Handoff.** A cycle that closes on itself every session.
 
-### Boot
+### Boot (with Retrieval)
 
-Load the project's Pin and Spec at session start. In multi-agent systems, boot also loads shared memory (global index) and the latest handoff entry.
+Load the project's Pin, Spec, Fact Store, and latest handoff at session start. In multi-agent systems, boot also loads shared memory (global fact index).
+
+**Contextual retrieval.** Before starting execution, the agent can query the Fact Store to retrieve facts relevant to the current task. In operations with dozens or hundreds of accumulated facts, text search (keyword match) resolves most cases. For larger ontologies, semantic search (embeddings) complements by finding facts by concept, not by word. FSTech operates a hybrid search engine (keyword + semantic) over 500+ documents, automatically indexed every 10 minutes. The infrastructure is simple: a local text index and a lightweight embeddings model. No external vector database.
 
 ### Execute
 
@@ -158,6 +185,26 @@ For each completed task:
 
 **Canonical anti-pattern.** Verification is not "I ran it and got no error." It's "I tried to break it and couldn't."
 
+### Consolidate
+
+After task write-backs and before handoff, the agent runs a consolidation sweep: which facts learned in this session deserve to persist in the Fact Store?
+
+Consolidation is the mechanism that transforms session knowledge into long-term knowledge. Without it, the Fact Store never grows and handoffs accumulate facts that should have been promoted.
+
+**Promotion criteria:**
+- The fact is reusable in future sessions (not specific to this execution)
+- The fact corrects or refines an existing fact in the Fact Store
+- The fact reveals a pattern that will recur (system behavior, client preference)
+
+**What not to promote:**
+- Temporary execution state (already in the Handoff)
+- Decisions that only make sense in this context
+- Information derivable from code or git log
+
+Consolidation is also the moment to verify existing facts: if during the session the agent discovered that a fact in the Fact Store is outdated, update or remove it. Facts with last verification older than 90 days enter a re-verification queue.
+
+FSTech operates consolidation as a periodic routine that reviews the entire fact index, removes duplicates, updates metadata, and prunes obsolete facts. The principle is parsimony: a Fact Store that only grows is a Fact Store that degrades.
+
 ### Handoff
 
 End the session when:
@@ -174,8 +221,8 @@ End the session when:
 
 | Layer | Where it lives | What it contains |
 |-------|---------------|-----------------|
-| Data (D) | Pin + context inherited from previous Handoff | Entities, rules, initial state |
-| Logic (L) | Pin (routes) + Spec (tasks) + Pre-done Gate | Decision rules and external validation |
+| Data (D) | Pin + Fact Store + context inherited from previous Handoff | Entities, rules, accumulated facts, initial state |
+| Logic (L) | Pin (routes) + Spec (tasks) + Pre-done Gate + Consolidation | Decision rules, external validation, fact promotion |
 | Action (A) | Execution + Handoff | Write-back to real system, memory for next cycle |
 
 External validation (Pre-done Gate) is what eliminates circularity. The agent doesn't validate itself on externally verifiable questions. Schema, permissions, dependency state — everything is checked by code, not by model opinion.
@@ -271,7 +318,7 @@ Read this framework as a mechanism description and invitation to verify, not as 
 
 ## 12. This Document Is a Snapshot
 
-The framework described here is not a final state. It's the April 2026 snapshot of a system that continues to move, precisely through the cycle it describes. Each component is refined by the very write-back it governs.
+The framework described here is not a final state. It's the April 2026 snapshot of a system that continues to move, precisely through the cycle it describes. Each component (Pin, Spec, Handoff, Facts) is refined by the very write-back it governs.
 
 In triad terms, the framework is Data (document structure), Logic (execution cycle), and Action (mandatory write-back), applied recursively to itself.
 
@@ -305,4 +352,4 @@ FSTech is a Brazilian consultancy focused on operationalizing businesses through
 
 ---
 
-Operational Ontology Framework v1.0 · April 2026 · [CC BY 4.0](LICENSE)
+Operational Ontology Framework v2.0 · April 2026 · [CC BY 4.0](LICENSE)

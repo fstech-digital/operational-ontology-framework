@@ -141,8 +141,9 @@ Next session should pick up the next open task in _spec.md.
     print(f"  Handoff saved: {path}")
 
 
-def execute_task(client, model: str, pin: str, handoff: str, task: str) -> dict:
+def execute_task(client, model: str, pin: str, facts: str, handoff: str, task: str) -> dict:
     """Execute a single task via LLM and return structured result."""
+    facts_section = f"\nAccumulated facts (long-term memory):\n{facts}" if facts else ""
     response = client.messages.create(
         model=model,
         max_tokens=MAX_TOKENS,
@@ -150,6 +151,7 @@ def execute_task(client, model: str, pin: str, handoff: str, task: str) -> dict:
 
 Your Pin (immutable rules):
 {pin}
+{facts_section}
 
 Previous handoff (context from last session):
 {handoff}
@@ -172,10 +174,11 @@ Respond in JSON format:
 
 
 def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool = False):
-    # --- BOOT ---
+    # --- BOOT (with Retrieval) ---
     print("\n=== BOOT ===")
     pin = read_file(os.path.join(project_dir, "_pin.md"))
     spec = read_file(os.path.join(project_dir, "_spec.md"))
+    facts = read_file(os.path.join(project_dir, "_facts.md"))
     handoff = latest_handoff(project_dir)
 
     if not pin:
@@ -187,6 +190,7 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
 
     print(f"  Pin loaded: {len(pin)} chars")
     print(f"  Spec loaded: {len(spec)} chars")
+    print(f"  Facts loaded: {len(facts)} chars" if facts else "  Facts: (none)")
     print(f"  Handoff loaded: {len(handoff)} chars")
     print(f"  Model: {model}")
 
@@ -220,7 +224,7 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
         print(f"\n=== EXECUTE [{i}/{len(tasks_to_run)}] ===")
         print(f"  Task: {task[:80]}...")
 
-        result = execute_task(client, model, pin, handoff, task)
+        result = execute_task(client, model, pin, facts, handoff, task)
         task_records.append(result)
 
         print(f"  Result: {result['result'][:200]}")
