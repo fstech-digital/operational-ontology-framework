@@ -40,6 +40,40 @@ except ImportError:
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
+MAX_SESSION_LEARNINGS = 10  # Keep last N learnings to prevent context blow-up
+CONTEXT_WARNING_RATIO = 0.5  # Warn when estimated tokens exceed this ratio of model capacity
+
+# Rough context window sizes by model family (chars, not tokens)
+MODEL_CONTEXT_CHARS = {
+    "claude": 800_000,   # ~200K tokens
+    "gpt": 500_000,      # ~128K tokens
+    "gemini": 4_000_000, # ~1M tokens
+    "haiku": 800_000,    # ~200K tokens
+    "sonnet": 800_000,   # ~200K tokens
+    "opus": 800_000,     # ~200K tokens
+}
+
+
+def estimate_context_chars(pin: str, facts: str, handoff: str, learnings: list) -> int:
+    """Rough estimate of system prompt size in characters."""
+    base = 500  # Framework instructions
+    learnings_text = sum(len(l) for l in learnings) if learnings else 0
+    return base + len(pin) + len(facts) + len(handoff) + learnings_text
+
+
+def check_context_warning(model: str, pin: str, facts: str, handoff: str, learnings: list):
+    """Warn if estimated context exceeds safe threshold."""
+    est = estimate_context_chars(pin, facts, handoff, learnings)
+    model_lower = model.lower()
+    capacity = 800_000  # default
+    for key, chars in MODEL_CONTEXT_CHARS.items():
+        if key in model_lower:
+            capacity = chars
+            break
+    ratio = est / capacity
+    if ratio > CONTEXT_WARNING_RATIO:
+        print(f"  ⚠️  Context at ~{ratio:.0%} of {model} capacity ({est:,} chars / {capacity:,})")
+        print(f"      Consider: fewer tasks per session, or trim _facts.md")
 
 
 def load_env():
@@ -230,7 +264,11 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
         print(f"\n=== EXECUTE [{i}/{len(tasks_to_run)}] ===")
         print(f"  Task: {task[:80]}...")
 
-        result = execute_task(client, model, pin, facts, handoff, task, session_learnings)
+        # Cap learnings to prevent context blow-up
+        capped_learnings = session_learnings[-MAX_SESSION_LEARNINGS:]
+        check_context_warning(model, pin, facts, handoff, capped_learnings)
+
+        result = execute_task(client, model, pin, facts, handoff, task, capped_learnings)
         task_records.append(result)
 
         print(f"  Result: {result['result'][:200]}")
