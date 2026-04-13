@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from agent import (
+    atomic_write,
     consolidate_facts,
     estimate_context_chars,
     find_open_tasks,
@@ -16,6 +17,7 @@ from agent import (
     mark_task_done,
     parse_agent_response,
     read_file,
+    validate_response,
 )
 
 
@@ -260,7 +262,7 @@ class TestConsolidateFacts:
             assert "stale" in content
             assert "fresh insight" in content
 
-    def test_does_not_double_flag_stale(self):
+    def test_does_not_double_flag_stale_consolidate(self):
         with tempfile.TemporaryDirectory() as d:
             old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d")
             facts_path = Path(d) / "_facts.md"
@@ -274,3 +276,66 @@ class TestConsolidateFacts:
 
             content = facts_path.read_text()
             assert content.count("⚠️ stale") == 1  # not doubled
+
+
+# ---------------------------------------------------------------------------
+# atomic_write
+# ---------------------------------------------------------------------------
+
+class TestAtomicWrite:
+    def test_writes_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "test.md")
+            atomic_write(path, "hello world")
+            assert Path(path).read_text() == "hello world"
+
+    def test_overwrites_existing(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "test.md")
+            Path(path).write_text("old")
+            atomic_write(path, "new")
+            assert Path(path).read_text() == "new"
+
+    def test_creates_parent_dirs(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "sub", "dir", "test.md")
+            atomic_write(path, "nested")
+            assert Path(path).read_text() == "nested"
+
+    def test_no_temp_files_left(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "test.md")
+            atomic_write(path, "content")
+            files = os.listdir(d)
+            assert files == ["test.md"]  # no .tmp leftovers
+
+
+# ---------------------------------------------------------------------------
+# validate_response
+# ---------------------------------------------------------------------------
+
+class TestValidateResponse:
+    def test_passes_valid_response(self):
+        r = validate_response({"result": "did X", "decision": "chose Y", "learned": "Z"})
+        assert r["result"] == "did X"
+        assert r["decision"] == "chose Y"
+        assert r["learned"] == "Z"
+
+    def test_fills_missing_result(self):
+        r = validate_response({})
+        assert r["result"] == "(no result)"
+        assert r["learned"] == "Task completed successfully"
+
+    def test_truncates_long_fields(self):
+        r = validate_response({"result": "x" * 3000, "learned": "y" * 300})
+        assert len(r["result"]) == 2000
+        assert len(r["learned"]) == 200
+
+    def test_preserves_extra_fields(self):
+        r = validate_response({"result": "ok", "learned": "L", "details": {"count": 5}})
+        assert r["details"] == {"count": 5}
+
+    def test_empty_strings_get_defaults(self):
+        r = validate_response({"result": "", "learned": ""})
+        assert r["result"] == "(no result)"
+        assert r["learned"] == "Task completed successfully"

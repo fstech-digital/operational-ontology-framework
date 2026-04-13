@@ -30,10 +30,12 @@ LLM Provider (set ADAPTER env var):
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
 import glob
+import tempfile
 import time
 from pathlib import Path
 from datetime import datetime
@@ -44,6 +46,8 @@ except ImportError:
     anthropic = None
 
 from adapters import get_adapter
+
+log = logging.getLogger("oof")
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 4096
@@ -81,8 +85,8 @@ def check_context_warning(model: str, pin: str, facts: str, handoff: str, learni
             break
     ratio = est / capacity
     if ratio > CONTEXT_WARNING_RATIO:
-        print(f"  ⚠️  Context at ~{ratio:.0%} of {model} capacity ({est:,} chars / {capacity:,})")
-        print(f"      Consider: fewer tasks per session, or trim _facts.md")
+        log.warning("Context at ~%s of %s capacity (%s chars / %s)", f"{ratio:.0%}", model, f"{est:,}", f"{capacity:,}")
+        log.warning("Consider: fewer tasks per session, or trim _facts.md")
 
 
 def load_env():
@@ -93,6 +97,42 @@ def load_env():
             if line and not line.startswith("#") and "=" in line:
                 key, val = line.split("=", 1)
                 os.environ.setdefault(key.strip(), val.strip())
+
+
+def atomic_write(path: str, content: str):
+    """Write content to file atomically via tempfile + rename.
+
+    Prevents corruption if the process is killed mid-write.
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=p.parent, suffix=".tmp")
+    try:
+        os.write(fd, content.encode())
+        os.close(fd)
+        os.replace(tmp, str(p))
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def validate_response(parsed: dict) -> dict:
+    """Ensure required fields exist with sensible defaults."""
+    validated = {
+        "result": parsed.get("result", "")[:2000] or "(no result)",
+        "decision": parsed.get("decision", "")[:500],
+        "learned": parsed.get("learned", "")[:200] or "Task completed successfully",
+    }
+    # Preserve any extra fields the model returned
+    for k, v in parsed.items():
+        if k not in validated:
+            validated[k] = v
+    return validated
 
 
 def read_file(path: str) -> str:
@@ -119,7 +159,7 @@ def mark_task_done(spec_path: str, task_line: str, learned: str):
     done_line = task_line.replace("- [ ]", "- [x]")
     done_line += f"\n  - Learned: {learned[:200]}"
     spec = spec.replace(task_line, done_line, 1)
-    Path(spec_path).write_text(spec)
+    atomic_write(spec_path, spec)
 
 
 def parse_agent_response(output: str) -> dict:
@@ -220,8 +260,8 @@ def consolidate_facts(project_dir: str, task_records: list):
                 pass
         pruned_lines.append(line)
 
-    facts_path.write_text("\n".join(pruned_lines))
-    print(f"  Facts consolidated: {len(new_facts)} new entries → _facts.md")
+    atomic_write(str(facts_path), "\n".join(pruned_lines))
+    log.info("Facts consolidated: %d new entries → _facts.md", len(new_facts))
 
 
 def generate_handoff(project_dir: str, focus: str, task_records: list):
@@ -253,8 +293,8 @@ def generate_handoff(project_dir: str, focus: str, task_records: list):
 Next session should pick up the next open task in _spec.md.
 """
     path = handoff_dir / f"{date_slug}.md"
-    path.write_text(content)
-    print(f"  Handoff saved: {path}")
+    atomic_write(str(path), content)
+    log.info("Handoff saved: %s", path)
 
 
 def execute_task(adapter, model: str, pin: str, facts: str, handoff: str, task: str, session_learnings: list = None) -> dict:
@@ -290,6 +330,7 @@ Respond in JSON format:
         try:
             output = adapter.create_message(model, MAX_TOKENS, system_prompt, messages)
             parsed = parse_agent_response(output)
+            parsed = validate_response(parsed)
             parsed["task"] = task
             parsed["raw"] = output
             return parsed
@@ -297,56 +338,56 @@ Respond in JSON format:
             last_error = e
             if attempt < API_MAX_RETRIES:
                 wait = API_RETRY_DELAY * (attempt + 1)
-                print(f"  ⚠️  {type(e).__name__}. Retrying in {wait}s... ({attempt + 1}/{API_MAX_RETRIES})")
+                log.warning("%s. Retrying in %ds... (%d/%d)", type(e).__name__, wait, attempt + 1, API_MAX_RETRIES)
                 time.sleep(wait)
         except adapter.status_error as e:
             last_error = e
             if hasattr(e, "status_code") and e.status_code >= 500 and attempt < API_MAX_RETRIES:
                 wait = API_RETRY_DELAY * (attempt + 1)
-                print(f"  ⚠️  API error ({e.status_code}). Retrying in {wait}s... ({attempt + 1}/{API_MAX_RETRIES})")
+                log.warning("API error (%d). Retrying in %ds... (%d/%d)", e.status_code, wait, attempt + 1, API_MAX_RETRIES)
                 time.sleep(wait)
             else:
                 break
 
-    print(f"\n  ❌ API call failed after {API_MAX_RETRIES + 1} attempts: {last_error}")
+    log.error("API call failed after %d attempts: %s", API_MAX_RETRIES + 1, last_error)
     sys.exit(1)
 
 
 def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool = False):
     # --- BOOT (with Retrieval) ---
-    print("\n=== BOOT ===")
+    log.info("=== BOOT ===")
     pin = read_file(os.path.join(project_dir, "_pin.md"))
     spec = read_file(os.path.join(project_dir, "_spec.md"))
     facts = read_file(os.path.join(project_dir, "_facts.md"))
     handoff = latest_handoff(project_dir)
 
     if not pin:
-        print(f"  ERROR: No _pin.md found in {project_dir}")
+        log.error("No _pin.md found in %s", project_dir)
         sys.exit(1)
     if not spec:
-        print(f"  ERROR: No _spec.md found in {project_dir}")
+        log.error("No _spec.md found in %s", project_dir)
         sys.exit(1)
 
-    print(f"  Pin loaded: {len(pin)} chars")
-    print(f"  Spec loaded: {len(spec)} chars")
-    print(f"  Facts loaded: {len(facts)} chars" if facts else "  Facts: (none)")
-    print(f"  Handoff loaded: {len(handoff)} chars")
-    print(f"  Model: {model}")
+    log.info("Pin loaded: %d chars", len(pin))
+    log.info("Spec loaded: %d chars", len(spec))
+    log.info("Facts loaded: %d chars" if facts else "Facts: (none)", len(facts) if facts else 0)
+    log.info("Handoff loaded: %d chars", len(handoff))
+    log.info("Model: %s", model)
 
     # --- FIND TASKS ---
     open_tasks = find_open_tasks(spec)
     if not open_tasks:
-        print("\n  No open tasks. Cycle complete.")
+        log.info("No open tasks. Cycle complete.")
         return
 
     tasks_to_run = open_tasks if run_all else open_tasks[:1]
-    print(f"\n  Open tasks: {len(open_tasks)}")
-    print(f"  Will execute: {len(tasks_to_run)} ({'--all' if run_all else 'first only'})")
+    log.info("Open tasks: %d", len(open_tasks))
+    log.info("Will execute: %d (%s)", len(tasks_to_run), '--all' if run_all else 'first only')
 
     if dry_run:
-        print("\n=== DRY RUN — tasks found ===")
+        log.info("=== DRY RUN ===")
         for i, t in enumerate(tasks_to_run, 1):
-            print(f"  [{i}] {t[:80]}")
+            log.info("[%d] %s", i, t[:80])
         return
 
     # --- EXECUTE ---
@@ -356,8 +397,8 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
     session_learnings = []  # Within-session knowledge accumulation
 
     for i, task in enumerate(tasks_to_run, 1):
-        print(f"\n=== EXECUTE [{i}/{len(tasks_to_run)}] ===")
-        print(f"  Task: {task[:80]}...")
+        log.info("=== EXECUTE [%d/%d] ===", i, len(tasks_to_run))
+        log.info("Task: %s", task[:80])
 
         # Cap learnings to prevent context blow-up
         capped_learnings = session_learnings[-MAX_SESSION_LEARNINGS:]
@@ -366,29 +407,34 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
         result = execute_task(adapter, model, pin, facts, handoff, task, capped_learnings)
         task_records.append(result)
 
-        print(f"  Result: {result['result'][:200]}")
-        print(f"  Learned: {result['learned'][:200]}")
+        log.info("Result: %s", result['result'][:200])
+        log.info("Learned: %s", result['learned'][:200])
 
         # --- WRITE-BACK ---
         mark_task_done(spec_path, task, result["learned"])
         session_learnings.append(result["learned"])
-        print(f"  Task marked done in _spec.md")
+        log.info("Task marked done in _spec.md")
 
         # Reload spec for next task (it was modified)
         spec = read_file(spec_path)
 
     # --- CONSOLIDATE ---
-    print(f"\n=== CONSOLIDATE ===")
+    log.info("=== CONSOLIDATE ===")
     consolidate_facts(project_dir, task_records)
 
     # --- HANDOFF ---
-    print(f"\n=== HANDOFF ({len(task_records)} tasks completed) ===")
+    log.info("=== HANDOFF (%d tasks completed) ===", len(task_records))
     focus = f"{len(task_records)} tasks executed in {project_dir}"
     generate_handoff(project_dir, focus, task_records)
-    print("\n=== CYCLE COMPLETE ===\n")
+    log.info("=== CYCLE COMPLETE ===")
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
     load_env()
 
     parser = argparse.ArgumentParser(
@@ -401,7 +447,7 @@ def main():
     args = parser.parse_args()
 
     if not Path(args.project_dir).is_dir():
-        print(f"Directory not found: {args.project_dir}")
+        log.error("Directory not found: %s", args.project_dir)
         sys.exit(1)
 
     model = args.model or os.environ.get("MODEL", DEFAULT_MODEL)
