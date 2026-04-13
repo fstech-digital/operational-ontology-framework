@@ -96,7 +96,10 @@ def load_env():
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 key, val = line.split("=", 1)
-                os.environ.setdefault(key.strip(), val.strip())
+                val = val.strip()
+                if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+                    val = val[1:-1]
+                os.environ.setdefault(key.strip(), val)
 
 
 def atomic_write(path: str, content: str):
@@ -147,15 +150,24 @@ def latest_handoff(project_dir: str) -> str:
 
 
 def find_open_tasks(spec: str) -> list:
+    """Find open tasks, excluding those under ## Blocked or ## Notes sections."""
     tasks = []
+    in_excluded_section = False
     for line in spec.splitlines():
-        if re.match(r"\s*- \[ \]", line):
+        if re.match(r"^##\s+Blocked", line, re.IGNORECASE):
+            in_excluded_section = True
+        elif re.match(r"^##\s+", line):
+            in_excluded_section = False
+        if not in_excluded_section and re.match(r"\s*- \[ \]", line):
             tasks.append(line.strip())
     return tasks
 
 
 def mark_task_done(spec_path: str, task_line: str, learned: str):
     spec = Path(spec_path).read_text()
+    if task_line not in spec:
+        log.warning("Task not found in spec (already done or whitespace mismatch): %s", task_line[:80])
+        return
     done_line = task_line.replace("- [ ]", "- [x]")
     done_line += f"\n  - Learned: {learned[:200]}"
     spec = spec.replace(task_line, done_line, 1)
@@ -350,7 +362,7 @@ Respond in JSON format:
                 break
 
     log.error("API call failed after %d attempts: %s", API_MAX_RETRIES + 1, last_error)
-    sys.exit(1)
+    raise RuntimeError(f"API call failed after {API_MAX_RETRIES + 1} attempts: {last_error}") from last_error
 
 
 def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool = False):
@@ -404,7 +416,13 @@ def run_cycle(project_dir: str, model: str, run_all: bool = False, dry_run: bool
         capped_learnings = session_learnings[-MAX_SESSION_LEARNINGS:]
         check_context_warning(model, pin, facts, handoff, capped_learnings)
 
-        result = execute_task(adapter, model, pin, facts, handoff, task, capped_learnings)
+        try:
+            result = execute_task(adapter, model, pin, facts, handoff, task, capped_learnings)
+        except RuntimeError as e:
+            log.error("Task failed: %s", e)
+            log.info("Skipping to consolidation/handoff with %d completed tasks", len(task_records))
+            break
+
         task_records.append(result)
 
         log.info("Result: %s", result['result'][:200])

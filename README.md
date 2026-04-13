@@ -54,7 +54,7 @@ ADAPTER=ollama python agent.py examples/customer-support --model gemma4:e2b
 
 LLM agents in production face three structural problems: no audit trail of decisions, state loss between sessions, and circular self-validation. The common fix (vector databases, embeddings) trades one problem for another: the agent now remembers diffusely, with no guarantee of which facts survived.
 
-## The Solution: 4 Document Artifacts
+## The Solution: 5 Document Artifacts
 
 Memory lives in the filesystem, not in the model. Four markdown files, versioned with git.
 
@@ -81,12 +81,12 @@ Boot (+ Retrieval) → Execute → Write-back → Consolidate → Handoff
 1. **Boot** — Load Pin + Spec + Facts + latest Handoff. Query Fact Store for relevant context.
 2. **Execute** — Work through tasks. Degrade signal: repetition, lost references, generic responses, or >50% context window consumed.
 3. **Write-back** — Verify, commit, mark done, annotate learning. One task, one commit.
-4. **Consolidate** — Promote session facts to long-term Fact Store. Prune stale facts (>90 days unverified).
+4. **Consolidate** — Promote session facts to long-term Fact Store. Flag stale facts (>90 days unverified) for review.
 5. **Handoff** — Structured record for next session. Always new session, never compaction.
 
 ## Key Properties
 
-**Model-agnostic.** Runs with Claude, GPT, Gemini, local models. Tested across provider migrations with zero state loss.
+**Model-agnostic.** Runs with Claude, GPT, Gemini, local models via built-in adapters (Anthropic, OpenAI, Ollama). Tested across provider migrations with zero state loss.
 
 **Memory sovereignty.** Memory lives in versioned files you control. Switch providers tomorrow, state survives. Not a feature, a consequence of the architecture.
 
@@ -124,9 +124,9 @@ Six months, five agents, three clients. Fleet migrated across Claude versions, G
 ## Repo Structure
 
 ```
-├── agent.py                  # Reference implementation (~400 lines)
+├── agent.py                  # Reference implementation (~480 lines)
 ├── adapters.py               # LLM provider adapters (Anthropic, OpenAI, Ollama)
-├── test_agent.py             # Unit tests (pytest, 29 tests)
+├── test_agent.py             # Unit tests (pytest, 38+ tests)
 ├── templates/
 │   ├── _pin.md               # Blank Pin with guidance
 │   ├── _spec.md              # Blank Spec with guidance

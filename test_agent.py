@@ -14,6 +14,7 @@ from agent import (
     estimate_context_chars,
     find_open_tasks,
     latest_handoff,
+    load_env,
     mark_task_done,
     parse_agent_response,
     read_file,
@@ -104,6 +105,32 @@ class TestFindOpenTasks:
         tasks = find_open_tasks(spec)
         assert len(tasks) == 1
 
+    def test_excludes_blocked_section(self):
+        spec = (
+            "## Tasks\n"
+            "- [ ] Active task\n"
+            "## Blocked\n"
+            "- [ ] Blocked task — waiting on external\n"
+            "## Notes\n"
+        )
+        tasks = find_open_tasks(spec)
+        assert len(tasks) == 1
+        assert tasks[0] == "- [ ] Active task"
+
+    def test_resumes_after_blocked_section(self):
+        spec = (
+            "## Tasks\n"
+            "- [ ] Task A\n"
+            "## Blocked\n"
+            "- [ ] Blocked task\n"
+            "## Other Section\n"
+            "- [ ] Task B\n"
+        )
+        tasks = find_open_tasks(spec)
+        assert len(tasks) == 2
+        assert "Task A" in tasks[0]
+        assert "Task B" in tasks[1]
+
 
 # ---------------------------------------------------------------------------
 # mark_task_done
@@ -134,7 +161,7 @@ class TestMarkTaskDone:
         assert content.count("- [ ]") == 1
 
     def test_truncates_long_learned(self):
-        long_text = "x" * 300
+        long_text = "a" * 100 + "b" * 100 + "c" * 100  # 300 chars, distinct segments
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
             f.write("- [ ] Task\n")
             f.flush()
@@ -143,10 +170,10 @@ class TestMarkTaskDone:
             os.unlink(f.name)
 
         learned_line = [l for l in content.splitlines() if "Learned:" in l][0]
-        # 200 chars max + "  - Learned: " prefix
-        assert len(long_text) == 300
-        assert "x" * 200 in learned_line
-        assert "x" * 201 not in learned_line
+        learned_value = learned_line.split("Learned: ", 1)[1]
+        # Must be exactly 200 chars (first 200 of the 300-char input)
+        assert len(learned_value) == 200
+        assert learned_value == "a" * 100 + "b" * 100  # third segment (c*100) truncated
 
 
 # ---------------------------------------------------------------------------
@@ -339,3 +366,76 @@ class TestValidateResponse:
         r = validate_response({"result": "", "learned": ""})
         assert r["result"] == "(no result)"
         assert r["learned"] == "Task completed successfully"
+
+
+# ---------------------------------------------------------------------------
+# mark_task_done — edge cases
+# ---------------------------------------------------------------------------
+
+class TestMarkTaskDoneEdgeCases:
+    def test_task_not_found_is_noop(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write("- [ ] Other task\n")
+            f.flush()
+            mark_task_done(f.name, "- [ ] Nonexistent task", "learned something")
+            content = Path(f.name).read_text()
+            os.unlink(f.name)
+        assert "- [x]" not in content
+        assert "- [ ] Other task" in content
+
+
+# ---------------------------------------------------------------------------
+# load_env — quote stripping
+# ---------------------------------------------------------------------------
+
+class TestLoadEnv:
+    def test_strips_double_quotes(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+            f.write('TEST_KEY_DQ="my-value"\n')
+            f.flush()
+            old_cwd = os.getcwd()
+            os.chdir(os.path.dirname(f.name))
+            os.rename(f.name, os.path.join(os.path.dirname(f.name), ".env"))
+            env_path = os.path.join(os.path.dirname(f.name), ".env")
+            try:
+                os.environ.pop("TEST_KEY_DQ", None)
+                load_env()
+                assert os.environ.get("TEST_KEY_DQ") == "my-value"
+            finally:
+                os.chdir(old_cwd)
+                os.unlink(env_path)
+                os.environ.pop("TEST_KEY_DQ", None)
+
+    def test_strips_single_quotes(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+            f.write("TEST_KEY_SQ='my-value'\n")
+            f.flush()
+            old_cwd = os.getcwd()
+            os.chdir(os.path.dirname(f.name))
+            os.rename(f.name, os.path.join(os.path.dirname(f.name), ".env"))
+            env_path = os.path.join(os.path.dirname(f.name), ".env")
+            try:
+                os.environ.pop("TEST_KEY_SQ", None)
+                load_env()
+                assert os.environ.get("TEST_KEY_SQ") == "my-value"
+            finally:
+                os.chdir(old_cwd)
+                os.unlink(env_path)
+                os.environ.pop("TEST_KEY_SQ", None)
+
+    def test_preserves_unquoted_values(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+            f.write("TEST_KEY_UQ=plain-value\n")
+            f.flush()
+            old_cwd = os.getcwd()
+            os.chdir(os.path.dirname(f.name))
+            os.rename(f.name, os.path.join(os.path.dirname(f.name), ".env"))
+            env_path = os.path.join(os.path.dirname(f.name), ".env")
+            try:
+                os.environ.pop("TEST_KEY_UQ", None)
+                load_env()
+                assert os.environ.get("TEST_KEY_UQ") == "plain-value"
+            finally:
+                os.chdir(old_cwd)
+                os.unlink(env_path)
+                os.environ.pop("TEST_KEY_UQ", None)

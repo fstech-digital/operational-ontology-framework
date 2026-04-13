@@ -121,15 +121,17 @@ class OllamaAdapter:
 
     def __init__(self):
         try:
-            from openai import OpenAI
+            from openai import OpenAI, APIStatusError, APIConnectionError
+            self._status_error = APIStatusError
+            self._connection_error = APIConnectionError
         except ImportError:
             print("Install openai SDK: pip install openai  (Ollama uses OpenAI-compatible API)")
             sys.exit(1)
 
         host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         self.client = OpenAI(base_url=f"{host}/v1", api_key="ollama")
-        self.retryable_errors = (ConnectionError,)
-        self.status_error = Exception
+        self.retryable_errors = (ConnectionError, self._connection_error)
+        self.status_error = self._status_error
 
     def create_message(self, model: str, max_tokens: int, system: str, messages: list) -> str:
         openai_messages = [{"role": "system", "content": system}]

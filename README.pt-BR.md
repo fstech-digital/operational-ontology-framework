@@ -54,7 +54,7 @@ ADAPTER=ollama python agent.py examples/customer-support --model gemma4:e2b
 
 Agentes LLM em produção enfrentam três problemas estruturais: sem rastro auditável de decisões, perda de estado entre sessões, e autovalidação circular. A solução comum (bancos vetoriais, embeddings) troca um problema por outro: o agente agora lembra de forma difusa, sem garantia de quais fatos sobreviveram.
 
-## A Solução: 4 Artefatos Documentais
+## A Solução: 5 Artefatos Documentais
 
 A memória vive no filesystem, não no modelo. Quatro arquivos markdown, versionados com git.
 
@@ -81,12 +81,12 @@ Boot (+ Retrieval) → Executar → Write-back → Consolidar → Handoff
 1. **Boot** — Carregar Pin + Spec + Facts + último Handoff. Consultar Fact Store por contexto relevante.
 2. **Executar** — Trabalhar nas tarefas. Sinais de degradação: repetição, perda de referências, respostas genéricas, ou >50% da janela de contexto consumida.
 3. **Write-back** — Verificar, commitar, marcar concluída, anotar aprendizado. Uma tarefa, um commit.
-4. **Consolidar** — Promover fatos da sessão para o Fact Store de longo prazo. Podar fatos stale (>90 dias sem verificação).
+4. **Consolidar** — Promover fatos da sessão para o Fact Store de longo prazo. Marcar fatos stale (>90 dias sem verificação) para revisão.
 5. **Handoff** — Registro estruturado para próxima sessão. Sempre nova sessão, nunca compactação.
 
 ## Propriedades Chave
 
-**Agnóstico de modelo.** Roda com Claude, GPT, Gemini, modelos locais. Testado em migrações entre providers com zero perda de estado.
+**Agnóstico de modelo.** Roda com Claude, GPT, Gemini, modelos locais via adaptadores integrados (Anthropic, OpenAI, Ollama). Testado em migrações entre providers com zero perda de estado.
 
 **Soberania de memória.** A memória vive em arquivos versionados que você controla. Trocar de provider amanhã não apaga o estado. Não é feature, é consequência da arquitetura.
 
@@ -124,9 +124,9 @@ Seis meses, cinco agentes, três clientes. Frota migrou entre versões do Claude
 ## Estrutura do Repo
 
 ```
-├── agent.py                  # Implementação de referência (~400 linhas)
+├── agent.py                  # Implementação de referência (~480 linhas)
 ├── adapters.py               # Adaptadores LLM (Anthropic, OpenAI, Ollama)
-├── test_agent.py             # Testes unitários (pytest, 29 testes)
+├── test_agent.py             # Testes unitários (pytest, 38+ testes)
 ├── templates/
 │   ├── _pin.md               # Pin em branco com orientação
 │   ├── _spec.md              # Spec em branco com orientação
