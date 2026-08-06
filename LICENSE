@@ -1,0 +1,24 @@
+FSTech Public Reference License
+Version 1.1
+
+Copyright (c) FSTech and Felipe Silva. All rights reserved.
+
+This repository is published as a public reference for the Operational Ontology Framework. It is not open-source software.
+
+You may:
+- read, link to and cite this material;
+- share limited excerpts with attribution to FSTech;
+- use the public concepts for study, internal evaluation and non-commercial research.
+
+You may not, without prior written permission from FSTech:
+- redistribute this repository or substantial portions of it as a framework, course, training package, consulting method or commercial product;
+- sell, sublicense or publish adapted versions of this material;
+- use FSTech names, marks or positioning to imply endorsement, certification or partnership;
+- remove attribution or present the framework as your own;
+- infer that this license grants access or rights to production systems, client implementations, prompts, tools, schemas, validators, datasets, deployment artifacts or internal operational procedures.
+
+The terms in this file apply to the material in the current public reference root. Historical distributions remain governed by the license supplied with those distributions. Publication under new terms does not revoke rights previously granted under an earlier license.
+
+THE MATERIAL IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. FSTECH SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM USE OF THIS MATERIAL.
+
+For commercial licensing or implementation inquiries: https://fstech.digital/contato

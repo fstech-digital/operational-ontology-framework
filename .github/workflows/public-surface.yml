@@ -1,0 +1,108 @@
+name: Public Surface
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out public reference
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Enforce file allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/expected-public-files <<'EOF'
+          .github/CODEOWNERS
+          .github/workflows/public-surface.yml
+          .markdownlint.json
+          CONTRIBUTING.md
+          LICENSE
+          NOTICE.md
+          README.md
+          README.pt-BR.md
+          SECURITY.md
+          docs/anti-patterns.md
+          docs/conceptual-example.md
+          docs/dla-model.md
+          docs/governance-principles.md
+          docs/what-is-operational-ontology.md
+          EOF
+          LC_ALL=C sort /tmp/expected-public-files -o /tmp/expected-public-files
+          git ls-files > /tmp/tracked-public-files
+          LC_ALL=C sort /tmp/tracked-public-files -o /tmp/tracked-public-files
+          diff -u /tmp/expected-public-files /tmp/tracked-public-files
+
+          if git ls-files -s | cut -d' ' -f1 | sort -u | grep -qvx '100644'; then
+            echo 'Unexpected executable, symlink or special file mode.' >&2
+            git ls-files -s >&2
+            exit 1
+          fi
+
+      - name: Reject credentials and implementation code
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          import subprocess
+          import sys
+
+          tracked = subprocess.run(
+              ["git", "ls-files", "-z"],
+              check=True,
+              capture_output=True,
+          ).stdout.decode().split("\0")
+          tracked = [path for path in tracked if path]
+
+          credential_markers = (
+              "sk" + "-ant-api",
+              "sk" + "-proj-",
+              "gh" + "p_",
+              "gh" + "o_",
+              "github" + "_pat_",
+              "gl" + "pat-",
+              "xox" + "b-",
+              "xox" + "p-",
+              "sk" + "_live_",
+              "sk" + "_test_",
+              "AIza" + "Sy",
+              "AK" + "IA",
+              "BEGIN " + "PRIVATE KEY",
+          )
+          implementation = re.compile(
+              r"(?m)^\s*(#!|def\s+\w+\(|class\s+\w+|import\s+\w+|from\s+\w+\s+import|"
+              r"function\s+\w+\(|(?:const|let|var)\s+\w+\s*=|pip\s+install|npm\s+install)"
+          )
+
+          errors = []
+          for path_text in tracked:
+              path = Path(path_text)
+              try:
+                  text = path.read_text()
+              except UnicodeDecodeError:
+                  errors.append(f"binary public artifact: {path_text}")
+                  continue
+              if any(marker in text for marker in credential_markers):
+                  errors.append(f"credential marker: {path_text}")
+              if path.suffix == ".md" and implementation.search(text):
+                  errors.append(f"implementation-like content: {path_text}")
+
+          if errors:
+              print("\n".join(errors), file=sys.stderr)
+              raise SystemExit(1)
+
+      - name: Verify canonical pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 2 --max-time 20 --output /dev/null https://fstech.digital/ontologia-operacional/
+          curl --fail --location --retry 2 --max-time 20 --output /dev/null https://fstech.digital/framework/
+          curl --fail --location --retry 2 --max-time 20 --output /dev/null https://fstech.digital/operational-ontology-kit/
